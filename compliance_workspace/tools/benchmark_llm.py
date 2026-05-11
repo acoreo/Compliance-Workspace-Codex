@@ -1,168 +1,402 @@
 """
-CDW LLM Benchmark — measures cold and warm inference latency for candidate models.
+CDW LLM benchmark.
 
-Usage (from the Dell, with Ollama already running):
-    D:\USB-Uncensored-LLM\Shared\cdw\python\python.exe ^
-        D:\USB-Uncensored-LLM\Shared\cdw\projects\cdw\compliance_workspace\tools\benchmark_llm.py ^
+Measures cold and warm Ollama inference for candidate models using one fixed
+NERC-style prompt. The output is intentionally plain Markdown so it can be
+pasted directly into 05112026-discussion.md.
+
+Usage from the Dell, with Ollama already running:
+
+    D:\\USB-Uncensored-LLM\\Shared\\cdw\\python\\python.exe ^
+        D:\\USB-Uncensored-LLM\\Shared\\cdw\\projects\\cdw\\compliance_workspace\\tools\\benchmark_llm.py ^
+        --ollama-bin D:\\USB-Uncensored-LLM\\Shared\\bin\\ollama.exe ^
         nemomix-local qwen2.5:7b
 
-Pass model names as arguments. Defaults to nemomix-local if none given.
-
-Each model gets two calls against a fixed MOD-025-2 prompt:
-  cold — model unloaded from RAM first (simulates first call of the day)
-  warm — model already in RAM (simulates subsequent calls in a run)
-
-Output: one row per call, pipe-delimited for easy pasting into the discussion log.
+Defaults to nemomix-local if no model names are provided.
 """
 from __future__ import annotations
 
+import argparse
 import json
+import shutil
+import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
+from typing import Any
 
-# ---------------------------------------------------------------------------
-# Fixed benchmark prompt — short MOD-025-2 requirement + realistic evidence
-# excerpt. Identical across all model runs so results are comparable.
-# ---------------------------------------------------------------------------
-_SYSTEM = (
-    "You are a NERC CIP compliance auditor. "
-    "Assess whether the provided evidence satisfies the stated requirement. "
-    "Respond ONLY with valid JSON: "
-    '{"verdict": "<Met|Partial|Gap|Not_Applicable>", '
-    '"rationale": "<one sentence>", '
-    '"confidence": <0.0-1.0>}'
+
+DEFAULT_BASE_URL = "http://127.0.0.1:11434"
+DEFAULT_TIMEOUT_SECONDS = 900
+DEFAULT_KEEP_ALIVE = "10m"
+
+VALID_VERDICTS = {"Met", "Partial", "Gap", "Not_Applicable"}
+
+SYSTEM_PROMPT = (
+    "You are a NERC CIP compliance auditor. Assess whether the provided "
+    "evidence satisfies the stated requirement. Respond only with valid JSON "
+    "matching this schema: "
+    '{"verdict":"Met|Partial|Gap|Not_Applicable",'
+    '"rationale":"one sentence","confidence":0.0}'
 )
 
-_USER = """\
+USER_PROMPT = """\
 Requirement: MOD-025-2 R1
 The Generator Owner shall provide reactive capability data for each generating
 unit or plant to the Transmission Planner and Planning Coordinator within 90
 calendar days of a request, or by an agreed-upon date.
 
-Evidence (500 chars):
-CenterPoint Energy — Acknowledgment of Receipt, dated 14 March 2022.
+Evidence excerpt:
+CenterPoint Energy - Acknowledgment of Receipt, dated 14 March 2022.
 Confirms receipt of reactive capability data for generating units at Houston
 South facility, submitted in response to Transmission Planner request dated
-12 January 2022. Submission occurred on 10 March 2022 — 57 calendar days
+12 January 2022. Submission occurred on 10 March 2022 - 57 calendar days
 after request. Signed: J. Francis, Compliance Officer.
 Reference: MOD-025-2 R1 Q1-2022 submission cycle.
 
 Respond with JSON only."""
 
-OLLAMA_BASE = "http://127.0.0.1:11434"
-CHAT_URL    = f"{OLLAMA_BASE}/v1/chat/completions"
-TIMEOUT     = 600   # seconds — long enough for a cold 12B load on CPU
+
+@dataclass
+class BenchmarkResult:
+    model: str
+    call: str
+    total_seconds: float
+    first_token_seconds: float | None
+    processor: str
+    valid_json: bool
+    verdict: str
+    response_snippet: str
+    error: str
 
 
-def _post(model: str, keep_alive: str = "5m") -> tuple[float, str]:
-    """POST a chat completion request. Returns (elapsed_seconds, raw_content)."""
-    payload = json.dumps({
+def _get_json(url: str, timeout: int) -> Any:
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _post_json(url: str, payload: dict[str, Any], timeout: int) -> Any:
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _chat_url(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
+
+
+def _api_url(base_url: str, path: str) -> str:
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return f"{base}{path}"
+
+
+def check_ollama(base_url: str) -> tuple[bool, str]:
+    try:
+        req = urllib.request.Request(_api_url(base_url, "/"), method="GET")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200, f"HTTP {resp.status}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def list_models(base_url: str) -> list[str]:
+    try:
+        data = _get_json(_api_url(base_url, "/api/tags"), timeout=5)
+        return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+    except Exception:
+        return []
+
+
+def unload_model(base_url: str, model: str) -> None:
+    """Unload a model without generating a benchmark response."""
+    payload = {"model": model, "keep_alive": 0}
+    try:
+        _post_json(_api_url(base_url, "/api/generate"), payload, timeout=30)
+    except Exception:
+        # Older Ollama builds may not support this exact unload path. The cold
+        # timing is still useful if the model was not already resident.
+        pass
+    time.sleep(2)
+
+
+def read_processor_from_cli(ollama_bin: str, model: str) -> str | None:
+    """Return PROCESSOR by parsing `ollama ps` output, if available."""
+    try:
+        proc = subprocess.run(
+            [ollama_bin, "ps"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+
+    lines = [line for line in proc.stdout.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return "not_loaded"
+
+    header = lines[0]
+    header_names = ["NAME", "ID", "SIZE", "PROCESSOR", "CONTEXT", "UNTIL"]
+    starts: dict[str, int] = {}
+    for name in header_names:
+        idx = header.find(name)
+        if idx >= 0:
+            starts[name] = idx
+    if "NAME" not in starts or "PROCESSOR" not in starts:
+        return None
+
+    target = model.split(":")[0]
+    for line in lines[1:]:
+        name_end = starts.get("ID", len(line))
+        name = line[starts["NAME"] : name_end].strip()
+        if name == model or name.split(":")[0] == target:
+            processor_start = starts["PROCESSOR"]
+            processor_end = starts.get("CONTEXT", len(line))
+            processor = line[processor_start:processor_end].strip()
+            return processor or "loaded"
+    return "not_loaded"
+
+
+def read_processor(base_url: str, model: str, ollama_bin: str | None) -> str:
+    """Return the PROCESSOR value from /api/ps for the given model."""
+    if ollama_bin:
+        cli_value = read_processor_from_cli(ollama_bin, model)
+        if cli_value:
+            return cli_value
+
+    try:
+        data = _get_json(_api_url(base_url, "/api/ps"), timeout=5)
+    except Exception as exc:
+        return f"unknown ({exc})"
+
+    target = model.split(":")[0]
+    for entry in data.get("models", []):
+        name = str(entry.get("name", ""))
+        if name == model or name.split(":")[0] == target:
+            processor = entry.get("processor")
+            if processor:
+                return str(processor)
+            details = entry.get("details") or {}
+            if details.get("processor"):
+                return str(details["processor"])
+            return "loaded"
+    return "not_loaded"
+
+
+def extract_json(content: str) -> dict[str, Any] | None:
+    text = content.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    try:
+        obj = json.loads(text)
+        return obj if isinstance(obj, dict) else None
+    except json.JSONDecodeError:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            obj = json.loads(text[start : end + 1])
+            return obj if isinstance(obj, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def validate_response(content: str) -> tuple[bool, str]:
+    obj = extract_json(content)
+    if obj is None:
+        return False, ""
+    verdict = str(obj.get("verdict", ""))
+    return verdict in VALID_VERDICTS, verdict
+
+
+def chat_completion_stream(
+    base_url: str,
+    model: str,
+    timeout: int,
+    keep_alive: str,
+) -> tuple[float, float | None, str, str]:
+    """Run a streaming chat completion and return timing plus content/error."""
+    payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user",   "content": _USER},
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": USER_PROMPT},
         ],
-        "max_tokens":  200,
+        "max_tokens": 200,
         "temperature": 0.1,
-        "stream":      False,
-        "keep_alive":  keep_alive,
-    }).encode()
+        "stream": True,
+        "keep_alive": keep_alive,
+    }
 
     req = urllib.request.Request(
-        CHAT_URL,
-        data=payload,
+        _chat_url(base_url),
+        data=json.dumps(payload).encode("utf-8"),
         method="POST",
         headers={"Content-Type": "application/json"},
     )
 
-    start = time.time()
+    started = time.time()
+    first_token: float | None = None
+    parts: list[str] = []
+
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-            body = json.loads(resp.read().decode())
-            content = body["choices"][0]["message"]["content"].strip()
-            return time.time() - start, content
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                if line.startswith("data:"):
+                    line = line[5:].strip()
+                if line == "[DONE]":
+                    break
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                delta = event.get("choices", [{}])[0].get("delta", {})
+                token = delta.get("content") or ""
+                if token and first_token is None:
+                    first_token = time.time() - started
+                if token:
+                    parts.append(token)
     except urllib.error.HTTPError as exc:
         snippet = ""
         try:
-            snippet = exc.read(200).decode(errors="replace")
+            snippet = exc.read(300).decode(errors="replace")
         except Exception:
             pass
-        return time.time() - start, f"HTTP {exc.code}: {snippet}"
+        return time.time() - started, first_token, "", f"HTTP {exc.code}: {snippet}"
     except Exception as exc:
-        return time.time() - start, f"ERROR: {exc}"
+        return time.time() - started, first_token, "", str(exc)
+
+    return time.time() - started, first_token, "".join(parts).strip(), ""
 
 
-def _unload(model: str) -> None:
-    """Ask Ollama to evict the model from RAM (keep_alive=0s)."""
-    payload = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": "x"}],
-        "max_tokens": 1,
-        "keep_alive": "0s",
-    }).encode()
-    req = urllib.request.Request(
-        CHAT_URL, data=payload, method="POST",
-        headers={"Content-Type": "application/json"},
+def run_call(
+    base_url: str,
+    model: str,
+    call: str,
+    timeout: int,
+    keep_alive: str,
+    ollama_bin: str | None,
+) -> BenchmarkResult:
+    total, first_token, content, error = chat_completion_stream(
+        base_url=base_url,
+        model=model,
+        timeout=timeout,
+        keep_alive=keep_alive,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30):
-            pass
-    except Exception:
-        pass
-    time.sleep(3)
+    processor = read_processor(base_url, model, ollama_bin)
+    valid, verdict = validate_response(content)
+    snippet_source = content if content else error
+    snippet = " ".join(snippet_source.split())[:80]
+    return BenchmarkResult(
+        model=model,
+        call=call,
+        total_seconds=total,
+        first_token_seconds=first_token,
+        processor=processor,
+        valid_json=valid,
+        verdict=verdict,
+        response_snippet=snippet,
+        error=error,
+    )
 
 
-def _verdict_valid(content: str) -> bool:
-    """Return True if the response is parseable JSON with a valid verdict."""
-    try:
-        obj = json.loads(content)
-        return obj.get("verdict") in {"Met", "Partial", "Gap", "Not_Applicable"}
-    except Exception:
-        # Try stripping markdown fences
-        stripped = content.strip().strip("`").strip()
-        if stripped.startswith("{"):
-            try:
-                obj = json.loads(stripped)
-                return obj.get("verdict") in {"Met", "Partial", "Gap", "Not_Applicable"}
-            except Exception:
-                pass
-    return False
+def print_table(results: list[BenchmarkResult]) -> None:
+    print("| model | call | first_token_s | total_s | processor | valid_json | verdict | notes |")
+    print("|---|---:|---:|---:|---|---:|---|---|")
+    for r in results:
+        first = "" if r.first_token_seconds is None else f"{r.first_token_seconds:.1f}"
+        notes = r.error or r.response_snippet
+        notes = notes.replace("|", "/")
+        print(
+            f"| {r.model} | {r.call} | {first} | {r.total_seconds:.1f} | "
+            f"{r.processor} | {str(r.valid_json)} | {r.verdict} | {notes} |"
+        )
 
 
-def benchmark(models: list[str]) -> None:
-    header = f"{'model':<28} | {'call':<5} | {'seconds':>8} | {'valid_json':>10} | response_snippet"
-    sep    = "-" * len(header)
-    print(header)
-    print(sep)
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Benchmark local Ollama models for CDW.")
+    parser.add_argument("models", nargs="*", default=["nemomix-local"])
+    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--keep-alive", default=DEFAULT_KEEP_ALIVE)
+    parser.add_argument(
+        "--ollama-bin",
+        default=None,
+        help=(
+            "Optional path to ollama.exe/ollama. When set, processor is read "
+            "from `ollama ps`, matching the Dell runtime check."
+        ),
+    )
+    return parser.parse_args(argv)
 
-    for model in models:
-        # --- Cold call ---
-        print(f"  Unloading {model} from RAM...", flush=True)
-        _unload(model)
 
-        print(f"  Cold call → {model}...", flush=True)
-        cold_secs, cold_content = _post(model, keep_alive="5m")
-        cold_valid   = _verdict_valid(cold_content)
-        cold_snippet = cold_content.replace("\n", " ")[:55]
-        print(f"{model:<28} | {'cold':<5} | {cold_secs:>8.1f} | {str(cold_valid):>10} | {cold_snippet}")
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
 
-        # --- Warm call (model still in RAM) ---
-        time.sleep(2)
-        print(f"  Warm call → {model}...", flush=True)
-        warm_secs, warm_content = _post(model, keep_alive="5m")
-        warm_valid   = _verdict_valid(warm_content)
-        warm_snippet = warm_content.replace("\n", " ")[:55]
-        print(f"{model:<28} | {'warm':<5} | {warm_secs:>8.1f} | {str(warm_valid):>10} | {warm_snippet}")
-        print()
+    ok, status = check_ollama(args.base_url)
+    if not ok:
+        print(f"ERROR: Ollama is not reachable at {args.base_url}: {status}", file=sys.stderr)
+        return 2
 
-    print(sep)
-    print("Paste this table into 05112026-discussion.md")
+    registered = list_models(args.base_url)
+    if registered:
+        print(f"Ollama models registered: {', '.join(registered)}")
+    else:
+        print("Ollama model list unavailable or empty.")
+
+    ollama_bin = args.ollama_bin or shutil.which("ollama")
+    if ollama_bin:
+        print(f"Processor source: {ollama_bin} ps")
+    else:
+        print("Processor source: Ollama HTTP /api/ps")
+
+    results: list[BenchmarkResult] = []
+    for model in args.models:
+        print(f"\n== {model} ==")
+        print("Unloading model before cold call...")
+        unload_model(args.base_url, model)
+        print("Cold call...")
+        results.append(
+            run_call(args.base_url, model, "cold", args.timeout, args.keep_alive, ollama_bin)
+        )
+        print("Warm call...")
+        results.append(
+            run_call(args.base_url, model, "warm", args.timeout, args.keep_alive, ollama_bin)
+        )
+
+    print("\nPaste this table into 05112026-discussion.md:")
+    print_table(results)
+    return 0
 
 
 if __name__ == "__main__":
-    targets = sys.argv[1:] if len(sys.argv) > 1 else ["nemomix-local"]
-    print(f"\nCDW LLM Benchmark  |  Ollama: {OLLAMA_BASE}")
-    print(f"Models: {', '.join(targets)}\n")
-    benchmark(targets)
+    raise SystemExit(main(sys.argv[1:]))
