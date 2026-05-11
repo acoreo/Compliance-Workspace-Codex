@@ -1,0 +1,16 @@
+# Required
+PySide6>=6.10.1
+
+# Required for Phase 2 embeddings (numeric operations)
+numpy>=1.24
+
+# Optional — graceful fallback to stub mode if not installed
+# sentence-transformers>=2.2  # preferred local embedding backend (air-gap safe)
+# pdfminer.six>=20221105      # PDF text extraction
+# python-docx>=0.8.11         # .docx text extraction
+# extract-msg>=0.28           # .msg (Outlook) extraction; falls back to raw binary scan if absent
+# Pillow>=9.0                 # image loading for OCR (.png/.jpg/.jpeg)
+# pytesseract>=0.3.10         # OCR wrapper; also requires tesseract binary
+#                             #   Windows: winget install UB-Mannheim.TesseractOCR
+#                             #     (or download installer from https://github.com/UB-Mannheim/tesseract/wiki)
+#                             #   Linux:   apt install tesseract-ocr

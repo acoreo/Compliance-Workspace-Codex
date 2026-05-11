@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# NERC PDFs — large binaries, not source code
+compliance_workspace/NERC-DOCS/
+
+# Vendor wheels — offline install artifacts, not source code
+vendor/
+
+# LLM model files
+*.gguf
+*.bin
+data/models/
+
+# Temp / pipe files
+compliance_workspace/data/.pipe_tmp/
+data/.pipe_tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cowork / Claude local session config
+.claude/
+
+# Logs / reports generated at runtime
+compliance_workspace/data/reports/
+data/reports/
+
+# Binary package artifacts / offline dependency caches
+*.whl
+*.zip
+*.dmg
+*.iso
+usb_deploy/Shared/cdw/wheels/*.whl
+usb_deploy/Shared/cdw/wheels/*.zip

@@ -1,0 +1,12 @@
+[llm]
+backend = "ollama"
+base_url = "http://localhost:11434/v1"
+model = "nemomix-local"
+timeout_seconds = 300
+max_retries = 3
+max_tokens = 1024
+temperature = 0.1
+inter_call_delay_seconds = 3
+
+[llm.fallback]
+model = "qwen2.5:9b"
