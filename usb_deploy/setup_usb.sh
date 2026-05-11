@@ -23,6 +23,8 @@ error()   { echo -e "${RED}  ✗  $*${RESET}"; }
 header()  { echo -e "\n${BOLD}$*${RESET}"; }
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
+SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="$(cd "$SETUP_DIR/.." && pwd)"
 USB="${1:-/Volumes/BK-1}"
 BASE="$USB/USB-Uncensored-LLM/Shared"
 MODELS_DIR="$BASE/models"
@@ -35,8 +37,7 @@ OLLAMA_MAC="$BIN_DIR/ollama-darwin"
 OLLAMA_WIN="$BIN_DIR/ollama.exe"
 PYTHON_DIR="$CDW_DIR/python"
 WHEELS_DIR="$CDW_DIR/wheels"
-REQ_FILE="$HOME/Projects/Compliance-Workspace/usb_deploy/Shared/cdw/requirements/cdw.txt"
-SRC_DIR="$HOME/Projects/Compliance-Workspace"
+REQ_FILE="$SRC_DIR/usb_deploy/Shared/cdw/requirements/cdw.txt"
 SCRIPTS_WIN="$CDW_DIR/scripts/windows"
 
 OLLAMA_PORT=11435
@@ -675,7 +676,13 @@ main() {
   echo ""
   echo -e "${BOLD}Pre-sync check: running pipeline validation…${RESET}"
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  if bash "$SCRIPT_DIR/test_pipeline.sh"; then
+  local nerc_docs_override=""
+  if [[ ! -d "$SRC_DIR/compliance_workspace/NERC-DOCS" \
+        && -d "$CDW_DIR/projects/cdw/compliance_workspace/NERC-DOCS" ]]; then
+    nerc_docs_override="$CDW_DIR/projects/cdw/compliance_workspace/NERC-DOCS"
+    info "Using USB NERC-DOCS for validation: $nerc_docs_override"
+  fi
+  if NERC_DOCS_OVERRIDE="$nerc_docs_override" bash "$SCRIPT_DIR/test_pipeline.sh"; then
     echo -e "${GREEN}  ✓ Pipeline validated — proceeding with sync${RESET}"
   else
     echo -e "${RED}  ✗ Pipeline validation FAILED — aborting sync${RESET}"

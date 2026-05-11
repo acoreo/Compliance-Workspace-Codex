@@ -32,7 +32,7 @@ echo "========================================"
 cd "$CDW_ROOT"
 
 # Verify NERC-DOCS exists and has PDFs
-NERC_DOCS="$CDW_ROOT/NERC-DOCS"
+NERC_DOCS="${NERC_DOCS_OVERRIDE:-$CDW_ROOT/NERC-DOCS}"
 if [ ! -d "$NERC_DOCS" ]; then
   echo "  ✗ NERC-DOCS not found at $NERC_DOCS"
   exit 1
@@ -43,6 +43,9 @@ if [ "$PDF_COUNT" -eq 0 ]; then
   exit 1
 fi
 echo "  NERC-DOCS: $PDF_COUNT PDF(s) found"
+if [ "$NERC_DOCS" != "$CDW_ROOT/NERC-DOCS" ]; then
+  echo "  NERC-DOCS source: $NERC_DOCS"
+fi
 
 # ── 1. Chunk one PDF (first one discovered — no hardcoding) ─────────────────
 echo ""
