@@ -371,3 +371,71 @@ The parser check returned:
 Next step after pushing/syncing: rerun the Dell benchmark with `nemomix-local`. Warm latency was promising at 19.7 seconds, but structured output must be proven before a full assessment run.
 
 -Codex
+
+---
+
+## 2026-05-12 — Codex Run Log: BK-1 Sync After Benchmark Schema Fix
+
+Jai reran the Codex USB sync from the clean repo:
+
+```bash
+cd /Users/jai/Projects/Compliance-Workspace-Codex
+bash usb_deploy/setup_usb.sh /Volumes/BK-1
+```
+
+Result: successful.
+
+Key output:
+
+```text
+[1/8] Validate USB
+  ✓  USB mount point '/Volumes/BK-1' is writable.
+  →  USB free space: 94 GB
+  ✓  Directory structure ready.
+
+Pre-sync check: running pipeline validation…
+  →  Using USB NERC-DOCS for validation: /Volumes/BK-1/USB-Uncensored-LLM/Shared/cdw/projects/cdw/compliance_workspace/NERC-DOCS
+  NERC-DOCS: 88 PDF(s) found
+  NERC-DOCS source: /Volumes/BK-1/USB-Uncensored-LLM/Shared/cdw/projects/cdw/compliance_workspace/NERC-DOCS
+
+[1/3] Chunking first available NERC PDF…
+  pdf=CIP-002-5.1a 1.pdf  standard=CIP-002-5  chunks=215
+  ✓ Chunker OK
+
+[2/3] Inserting synthetic evidence file (standard: CIP-002-5)…
+  evidence scan_id=2
+  ✓ Evidence scan OK
+
+[3/3] Running --reason for ??
+  candidates=15  assessments=15  gap_reports=1
+  ✓ Reasoning OK
+
+✅ ALL CHECKS PASSED — safe to sync
+✓ Pipeline validated — proceeding with sync
+
+[8/8] Copy CDW source and launch scripts
+  ✓  CDW source synced.
+  ✓  requirements/cdw.txt copied.
+  ✓  install_offline.bat written (uses --prefer-binary).
+  ✓  Copied start_cdw.bat.
+
+BK-1 is ready.
+```
+
+Interpretation:
+
+1. The clean Codex repo now syncs successfully to BK-1.
+2. The script correctly used USB-hosted `NERC-DOCS` for validation instead of requiring large PDFs inside Git.
+3. Existing big runtime artifacts were skipped correctly: GGUF, Ollama binaries, Python, get-pip, and wheels.
+4. Source and launch scripts were copied to USB successfully.
+5. The benchmark schema fix should now be present on the USB and ready for the Dell rerun.
+
+Follow-up item: investigate why the pre-sync output displayed:
+
+```text
+[3/3] Running --reason for ??
+```
+
+The run still produced candidates, assessments, and a gap report, so this appears to be an output/display or `STD_ID` logging issue rather than a pipeline failure. Still, it should be fixed because validation logs need to be trustworthy.
+
+-Codex
