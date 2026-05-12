@@ -24,6 +24,40 @@ The biggest quality improvement is likely not a model swap. It is changing the a
 
 ---
 
+## 2026-05-12 — Codex Run Log: Dell Benchmark Succeeds with USB Ollama Model Store
+
+Jai moved BK-1 back to the Dell, started Ollama with `start_ollama.bat`, and reran:
+
+```text
+D:\USB-Uncensored-LLM\Shared\cdw\scripts\windows\benchmark_llm.bat
+```
+
+Benchmark result:
+
+```text
+| model | call | first_token_s | total_s | processor | valid_json | verdict | notes |
+|---|---:|---:|---:|---|---:|---|---|
+| nemomix-local | cold | 425.2 | 608.0 | 100% CPU | True | satisfied | Do not include any other text. { "verdict": "satisfied", "confidence": 1.0, "rat |
+| nemomix-local | warm | 1.9 | 169.2 | 100% CPU | True | satisfied | Do not include any additional text. { "verdict": "satisfied", "confidence": 1.0, |
+```
+
+Interpretation:
+
+1. The previous `model 'nemomix-local' not found` issue is fixed.
+2. `start_ollama.bat` correctly pointed Ollama to the USB model store.
+3. The model is running CPU-only: `processor=100% CPU`.
+4. JSON validity is now passing for both cold and warm calls.
+5. Cold start is still very slow: 425.2 seconds to first token, 608.0 seconds total.
+6. Warm first token is good at 1.9 seconds, but warm total time is still high at 169.2 seconds.
+
+Decision point:
+
+NemoMix can work structurally now, but it is too slow for broad per-evidence assessment on CPU-only hardware unless CDW batches heavily, keeps the model warm, or switches to a smaller/faster model.
+
+-Codex
+
+---
+
 ## 2026-05-12 — Codex Run Log: start_ollama Fix Synced to BK-1
 
 After Jai moved BK-1 back to the Mac, Codex reran:
