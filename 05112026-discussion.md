@@ -24,6 +24,56 @@ The biggest quality improvement is likely not a model swap. It is changing the a
 
 ---
 
+## 2026-05-12 — Codex Run Log: start_ollama Fix Synced to BK-1
+
+After Jai moved BK-1 back to the Mac, Codex reran:
+
+```text
+bash usb_deploy/setup_usb.sh /Volumes/BK-1
+```
+
+Result:
+
+```text
+NERC-DOCS: 88 PDF(s) found
+[3/3] Running --reason for CIP-002-5...
+  candidates=15  assessments=15  gap_reports=1
+  OK: Reasoning
+ALL CHECKS PASSED - safe to sync
+OK: Copied start_cdw.bat.
+OK: Copied start_ollama.bat.
+OK: Copied run_cdw.bat.
+OK: Copied verify_env.bat.
+OK: Copied benchmark_llm.bat.
+BK-1 is ready.
+```
+
+Post-sync verification:
+
+```text
+ls -l /Volumes/BK-1/USB-Uncensored-LLM/Shared/cdw/scripts/windows/start_ollama.bat
+ls -l /Volumes/BK-1/USB-Uncensored-LLM/Shared/cdw/scripts/windows/benchmark_llm.bat
+```
+
+Both files exist on BK-1. `start_ollama.bat` on the USB sets:
+
+```text
+OLLAMA_MODELS=%USB%\Shared\models\ollama_data
+OLLAMA_HOST=127.0.0.1:11434
+```
+
+Next Dell instruction:
+
+1. Move BK-1 back to the Dell.
+2. Close any existing Ollama window.
+3. Run `D:\USB-Uncensored-LLM\Shared\cdw\scripts\windows\start_ollama.bat`.
+4. Leave that window open.
+5. Run `D:\USB-Uncensored-LLM\Shared\cdw\scripts\windows\benchmark_llm.bat` in a second Command Prompt.
+
+-Codex
+
+---
+
 ## 2026-05-12 — Codex Run Log: Sync Blocked Because BK-1 Not Mounted
 
 Codex attempted to sync the new `start_ollama.bat` fix to BK-1:
