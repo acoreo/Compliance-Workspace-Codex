@@ -24,6 +24,86 @@ The biggest quality improvement is likely not a model swap. It is changing the a
 
 ---
 
+## 2026-05-12 — Codex Run Log: Sync Blocked Because BK-1 Not Mounted
+
+Codex attempted to sync the new `start_ollama.bat` fix to BK-1:
+
+```text
+bash usb_deploy/setup_usb.sh /Volumes/BK-1
+```
+
+The script stopped correctly at USB validation:
+
+```text
+[1/8] Validate USB
+ERROR: Mount point '/Volumes/BK-1' does not exist.
+ERROR: Is the USB drive plugged in? Try: diskutil list
+ERROR: Step 1/8 failed.
+ERROR: USB validation failed for target '/Volumes/BK-1'.
+Aborting USB staging before any download or sync steps.
+```
+
+Meaning:
+
+The latest fix is committed in the repo working tree but is not yet on the USB because the USB is currently on the Dell or otherwise not mounted on the Mac. This is the correct behavior; the script did not continue into download/copy steps after a missing mount point.
+
+Next action: plug BK-1 back into the Mac and rerun `bash usb_deploy/setup_usb.sh /Volumes/BK-1`, or manually start Ollama on the Dell with `OLLAMA_MODELS` set to `D:\USB-Uncensored-LLM\Shared\models\ollama_data`.
+
+-Codex
+
+---
+
+## 2026-05-12 — Codex Run Log: Dell Benchmark Hit Wrong Ollama Model Store
+
+Jai ran the benchmark on the Dell and got:
+
+```text
+Ollama model list unavailable or empty.
+Processor source: D:\USB-Uncensored-LLM\Shared\bin\ollama.exe ps
+
+== nemomix-local ==
+Unloading model before cold call...
+Cold call...
+Warm call...
+
+| model | call | first_token_s | total_s | processor | valid_json | verdict | notes |
+|---|---:|---:|---:|---|---:|---|---|
+| nemomix-local | cold |  | 0.0 | not_loaded | False |  | HTTP 404: {"error":{"message":"model 'nemomix-local' not found","type":"not_found_error","param":null,"code":null}} |
+| nemomix-local | warm |  | 0.0 | not_loaded | False |  | HTTP 404: {"error":{"message":"model 'nemomix-local' not found","type":"not_found_error","param":null,"code":null}} |
+```
+
+Root cause:
+
+The benchmark script ran, but Ollama was serving from the wrong model store. Jai had started Ollama directly with:
+
+```text
+D:\USB-Uncensored-LLM\Shared\bin\ollama.exe serve
+```
+
+That does not set `OLLAMA_MODELS`, so the server looks in the default user model directory instead of:
+
+```text
+D:\USB-Uncensored-LLM\Shared\models\ollama_data
+```
+
+Fix applied:
+
+1. Added `start_ollama.bat`, which resolves the USB root from its own script path and starts Ollama with `OLLAMA_MODELS` pointed at the USB model store.
+2. Updated `start_cdw.bat` to launch `start_ollama.bat` instead of embedding fragile `cmd /C set ... && ollama.exe serve` quoting.
+3. Updated `benchmark_llm.bat` to print the expected model store and fail fast if Ollama is not already responding at `127.0.0.1:11434`.
+4. Updated `setup_usb.sh` so `start_ollama.bat` is copied to the USB during sync.
+
+Next Dell instruction after syncing:
+
+```text
+D:\USB-Uncensored-LLM\Shared\cdw\scripts\windows\start_ollama.bat
+D:\USB-Uncensored-LLM\Shared\cdw\scripts\windows\benchmark_llm.bat
+```
+
+-Codex
+
+---
+
 ## 2026-05-12 — Codex Run Log: Portable Script Sync to BK-1
 
 Codex reran the USB staging script after the portability pass:

@@ -16,6 +16,7 @@ set "CDW_SRC=%USB%\Shared\cdw\projects\cdw"
 set "CDW_MAIN=%CDW_SRC%\compliance_workspace\main.py"
 set "DONE_FLAG=%USB%\Shared\cdw\done.flag"
 set "INSTALL_SCRIPT=%~dp0install_offline.bat"
+set "OLLAMA_SCRIPT=%~dp0start_ollama.bat"
 
 echo ============================================================
 echo   CDW Launcher
@@ -72,11 +73,8 @@ if not exist "%OLLAMA%" (
     exit /b 1
 )
 
-:: Start Ollama with OLLAMA_MODELS set explicitly in the command environment.
-:: Using "cmd /C set OLLAMA_MODELS=... && ollama.exe serve" ensures the env
-:: var reaches the new process even when launched from Windows Explorer.
 echo       Starting Ollama (model store: %OLLAMA_MODELS%)...
-start "Ollama - CDW" cmd /C "set OLLAMA_MODELS=%OLLAMA_MODELS% && set OLLAMA_HOST=%OLLAMA_HOST% && "%OLLAMA%" serve"
+start "Ollama - CDW" "%OLLAMA_SCRIPT%"
 
 echo       Waiting for Ollama to be ready (up to 60 s)...
 set /a WAIT_COUNT=0

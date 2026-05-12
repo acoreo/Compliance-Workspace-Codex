@@ -641,7 +641,7 @@ BAT_EOF
   # copied so drive-letter portability fixes reach the USB.
   local bat_src="$SRC_DIR/usb_deploy/Shared/cdw/scripts/windows"
   local bat_name
-  for bat_name in start_cdw.bat run_cdw.bat verify_env.bat benchmark_llm.bat; do
+  for bat_name in start_cdw.bat start_ollama.bat run_cdw.bat verify_env.bat benchmark_llm.bat; do
     if [[ -f "$bat_src/$bat_name" ]]; then
       info "Copying $bat_name..."
       cp "$bat_src/$bat_name" "$SCRIPTS_WIN/$bat_name" \

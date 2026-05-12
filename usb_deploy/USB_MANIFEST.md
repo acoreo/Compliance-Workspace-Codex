@@ -52,6 +52,7 @@ as long as the `Shared\cdw\scripts\windows\` structure is preserved.
             ├── scripts\
             │   ├── windows\
             │   │   ├── start_cdw.bat               ← Main launcher (run this first)
+            │   │   ├── start_ollama.bat            ← Starts Ollama with USB model store
             │   │   ├── install_offline.bat          ← Bootstraps pip + all deps
             │   │   ├── run_cdw.bat                 ← Runs CDW after install
             │   │   ├── benchmark_llm.bat           ← Runs the Ollama benchmark
@@ -103,5 +104,5 @@ as long as the `Shared\cdw\scripts\windows\` structure is preserved.
 1. Plug in the USB drive and note its assigned drive letter.
 2. Double-click `<USB drive>:\<layout-root>\Shared\cdw\scripts\windows\start_cdw.bat`
 3. First run installs all deps (~2 min), then launches CDW
-4. In a separate window: `<USB drive>:\<layout-root>\Shared\bin\ollama.exe serve`
+4. In a separate window: `<USB drive>:\<layout-root>\Shared\cdw\scripts\windows\start_ollama.bat`
 5. Run assessment: `python main.py --reason --scan-id 1 --standard MOD-025-2`
