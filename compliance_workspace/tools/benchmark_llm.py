@@ -17,7 +17,9 @@ Defaults to nemomix-local if no model names are provided.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -32,14 +34,12 @@ DEFAULT_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_TIMEOUT_SECONDS = 900
 DEFAULT_KEEP_ALIVE = "10m"
 
-VALID_VERDICTS = {"Met", "Partial", "Gap", "Not_Applicable"}
+VALID_VERDICTS = {"satisfied", "partial", "gap", "not_applicable"}
 
 SYSTEM_PROMPT = (
-    "You are a NERC CIP compliance auditor. Assess whether the provided "
-    "evidence satisfies the stated requirement. Respond only with valid JSON "
-    "matching this schema: "
-    '{"verdict":"Met|Partial|Gap|Not_Applicable",'
-    '"rationale":"one sentence","confidence":0.0}'
+    "You are a NERC compliance auditor. Assess whether the provided evidence "
+    "satisfies the stated requirement. Return only one JSON object. Do not add "
+    "markdown fences, commentary, labels, or extra text."
 )
 
 USER_PROMPT = """\
@@ -56,7 +56,18 @@ South facility, submitted in response to Transmission Planner request dated
 after request. Signed: J. Francis, Compliance Officer.
 Reference: MOD-025-2 R1 Q1-2022 submission cycle.
 
-Respond with JSON only."""
+Task: Does this evidence satisfy the requirement?
+
+Return exactly this JSON shape:
+{
+  "verdict": "satisfied" | "partial" | "gap" | "not_applicable",
+  "confidence": 0.0,
+  "rationale": "one paragraph explanation",
+  "cited_text": "exact quote from evidence that supports verdict, or null",
+  "gaps_identified": []
+}
+
+Use one of the four verdict strings exactly. Respond with JSON only."""
 
 
 @dataclass
@@ -70,6 +81,7 @@ class BenchmarkResult:
     verdict: str
     response_snippet: str
     error: str
+    raw_response: str
 
 
 def _get_json(url: str, timeout: int) -> Any:
@@ -231,8 +243,9 @@ def validate_response(content: str) -> tuple[bool, str]:
     obj = extract_json(content)
     if obj is None:
         return False, ""
-    verdict = str(obj.get("verdict", ""))
-    return verdict in VALID_VERDICTS, verdict
+    verdict = str(obj.get("verdict", "")).lower().strip()
+    required = {"verdict", "confidence", "rationale", "cited_text", "gaps_identified"}
+    return verdict in VALID_VERDICTS and required.issubset(obj.keys()), verdict
 
 
 def chat_completion_stream(
@@ -326,6 +339,7 @@ def run_call(
         verdict=verdict,
         response_snippet=snippet,
         error=error,
+        raw_response=content,
     )
 
 
@@ -342,12 +356,41 @@ def print_table(results: list[BenchmarkResult]) -> None:
         )
 
 
+def write_raw_results(path: Path, results: list[BenchmarkResult]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        for r in results:
+            f.write(
+                json.dumps(
+                    {
+                        "ts": dt.datetime.now(dt.UTC).isoformat(),
+                        "model": r.model,
+                        "call": r.call,
+                        "total_seconds": r.total_seconds,
+                        "first_token_seconds": r.first_token_seconds,
+                        "processor": r.processor,
+                        "valid_json": r.valid_json,
+                        "verdict": r.verdict,
+                        "error": r.error,
+                        "raw_response": r.raw_response,
+                    },
+                    ensure_ascii=True,
+                )
+                + "\n"
+            )
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark local Ollama models for CDW.")
     parser.add_argument("models", nargs="*", default=["nemomix-local"])
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--keep-alive", default=DEFAULT_KEEP_ALIVE)
+    parser.add_argument(
+        "--raw-log",
+        default=None,
+        help="Optional JSONL path for full raw responses. Defaults to data/benchmark_raw.jsonl.",
+    )
     parser.add_argument(
         "--ollama-bin",
         default=None,
@@ -395,6 +438,9 @@ def main(argv: list[str]) -> int:
 
     print("\nPaste this table into 05112026-discussion.md:")
     print_table(results)
+    raw_log = Path(args.raw_log) if args.raw_log else Path("data") / "benchmark_raw.jsonl"
+    write_raw_results(raw_log, results)
+    print(f"\nRaw responses written to: {raw_log}")
     return 0
 
 

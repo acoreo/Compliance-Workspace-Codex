@@ -317,3 +317,57 @@ D:\USB-Uncensored-LLM\Shared\cdw\python\python.exe D:\USB-Uncensored-LLM\Shared\
 If a command using `nemomix` fails, that is expected unless `ollama list` shows a model actually named `nemomix`. Do not treat that as a CDW bug. It is simply the wrong registered model name.
 
 -Codex
+
+---
+
+## 2026-05-12 — Dell Benchmark Result: NemoMix CPU-Only Latency
+
+Jai ran the Dell benchmark for `nemomix-local`.
+
+```text
+| model | call | first_token_s | total_s | processor | valid_json | verdict | notes |
+|---|---:|---:|---:|---|---:|---|---|
+| nemomix-local | cold | 360.5 | 602.3 | 100% CPU | False |  | Do not include any other text or formatting. ```json { "evidence": { "type": "ac |
+| nemomix-local | warm | 2.5 | 19.7 | 100% CPU | False |  | Do not include any other text or formatting. |
+```
+
+Interpretation:
+
+1. `processor = 100% CPU` confirms again that there is no active GPU/iGPU offload.
+2. Cold load is extremely expensive: first token at 360.5 seconds, total call 602.3 seconds. That means the first call of the day can take about 10 minutes.
+3. Warm inference is much better: first token at 2.5 seconds, total call 19.7 seconds. That is potentially usable if the model stays loaded and CDW reduces unnecessary calls.
+4. `valid_json = False` means the benchmark response was not accepted by the benchmark validator. Do not proceed to full assessment until the structured-output path is tightened and re-benchmarked.
+
+Next Codex action: align the benchmark schema with CDW's real assessment schema and make the tool capture enough raw response detail to diagnose invalid JSON without guessing.
+
+-Codex
+
+---
+
+## 2026-05-12 — Codex Benchmark Tool Correction: Match Production Schema
+
+The Dell benchmark showed useful latency numbers but `valid_json = False`. Codex found one benchmark-tool issue before asking for another Dell run: the benchmark was validating `Met|Partial|Gap|Not_Applicable`, while CDW's production assessor expects `satisfied|partial|gap|not_applicable` plus the full assessment fields.
+
+Fix applied:
+
+1. Benchmark prompt now uses the same verdict strings as CDW production assessment.
+2. Benchmark validator now requires the production fields: `verdict`, `confidence`, `rationale`, `cited_text`, and `gaps_identified`.
+3. Benchmark now writes full raw responses to `data/benchmark_raw.jsonl` by default, so future invalid JSON can be diagnosed from the actual response instead of an 80-character snippet.
+
+Verification performed:
+
+```text
+PYTHONPYCACHEPREFIX=/private/tmp/codex-pycache python3 -m py_compile compliance_workspace/tools/benchmark_llm.py compliance_workspace/mapper/reasoning/assessor.py
+python3 compliance_workspace/tools/benchmark_llm.py --help
+python3 -c 'from compliance_workspace.tools.benchmark_llm import validate_response; raw="```json\n{\"verdict\":\"satisfied\",\"confidence\":0.8,\"rationale\":\"ok\",\"cited_text\":null,\"gaps_identified\":[]}\n```"; print(validate_response(raw))'
+```
+
+The parser check returned:
+
+```text
+(True, 'satisfied')
+```
+
+Next step after pushing/syncing: rerun the Dell benchmark with `nemomix-local`. Warm latency was promising at 19.7 seconds, but structured output must be proven before a full assessment run.
+
+-Codex
