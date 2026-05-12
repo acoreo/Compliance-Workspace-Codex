@@ -1,6 +1,6 @@
 #!/bin/bash
 # CDW Pre-sync pipeline validation
-# No hardcoded standards or file names — discovers what's in NERC-DOCS at runtime.
+# No hardcoded standards or file names - discovers what's in NERC-DOCS at runtime.
 #
 # Note: set -u is intentionally NOT used here. Bash on macOS (3.2 and Homebrew 5)
 # treats unset variables differently across heredoc subshell boundaries, causing
@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CDW_ROOT="$SCRIPT_DIR/../compliance_workspace"
 PYTHON="${PYTHON:-python3}"
 
-# Use a project-local temp dir — avoids failures when /tmp is full on the host.
+# Use a project-local temp dir - avoids failures when /tmp is full on the host.
 PIPE_TMP="$CDW_ROOT/data/.pipe_tmp"
 mkdir -p "$PIPE_TMP"
 export TMPDIR="$PIPE_TMP"   # bash heredocs write their temp files to TMPDIR
@@ -34,12 +34,12 @@ cd "$CDW_ROOT"
 # Verify NERC-DOCS exists and has PDFs
 NERC_DOCS="${NERC_DOCS_OVERRIDE:-$CDW_ROOT/NERC-DOCS}"
 if [ ! -d "$NERC_DOCS" ]; then
-  echo "  ✗ NERC-DOCS not found at $NERC_DOCS"
+  echo "  ERROR: NERC-DOCS not found at $NERC_DOCS"
   exit 1
 fi
 PDF_COUNT=$(find "$NERC_DOCS" -maxdepth 1 -name "*.pdf" | wc -l | tr -d ' ')
 if [ "$PDF_COUNT" -eq 0 ]; then
-  echo "  ✗ No PDFs in NERC-DOCS"
+  echo "  ERROR: No PDFs in NERC-DOCS"
   exit 1
 fi
 echo "  NERC-DOCS: $PDF_COUNT PDF(s) found"
@@ -47,9 +47,9 @@ if [ "$NERC_DOCS" != "$CDW_ROOT/NERC-DOCS" ]; then
   echo "  NERC-DOCS source: $NERC_DOCS"
 fi
 
-# ── 1. Chunk one PDF (first one discovered — no hardcoding) ─────────────────
+# 1. Chunk one PDF (first one discovered - no hardcoding)
 echo ""
-echo "[1/3] Chunking first available NERC PDF…"
+echo "[1/3] Chunking first available NERC PDF..."
 
 RESULT=$($PYTHON - "$NERC_DOCS" "$DB" <<'PY'
 import sys, sqlite3, pathlib, datetime, io
@@ -140,20 +140,20 @@ PDF_NAME=$(echo "$RESULT" | cut -d'|' -f1)
 STD_ID=$(echo "$RESULT"   | cut -d'|' -f2)
 N_CHUNKS=$(echo "$RESULT" | cut -d'|' -f3)
 
-# Persist STD_ID to disk — bash on macOS can lose variables across heredoc
+# Persist STD_ID to disk - bash on macOS can lose variables across heredoc
 # subshell boundaries under set -euo pipefail. Reading from file is reliable.
 echo "$STD_ID" > "$PIPE_TMP/std_id.txt"
 
 if [ -z "$PDF_NAME" ] || [ -z "$STD_ID" ] || [ -z "$N_CHUNKS" ]; then
-  echo "  ✗ Chunker output malformed: RESULT='$RESULT'"
+  echo "  ERROR: Chunker output malformed: RESULT='$RESULT'"
   exit 1
 fi
 echo "  pdf=$PDF_NAME  standard=$STD_ID  chunks=$N_CHUNKS"
-echo "  ✓ Chunker OK"
+echo "  OK: Chunker"
 
-# ── 2. Synthetic evidence scan ───────────────────────────────────────────────
+# 2. Synthetic evidence scan
 echo ""
-echo "[2/3] Inserting synthetic evidence file (standard: $STD_ID)…"
+printf '[2/3] Inserting synthetic evidence file (standard: %s)...\n' "$STD_ID"
 echo "$STD_ID compliance evidence. This document demonstrates adherence to all requirements." > "$EV_FILE"
 
 $PYTHON - "$DB" "$EV_FILE" <<'PY'
@@ -176,17 +176,17 @@ conn.commit()
 conn.close()
 print(f"  evidence scan_id={sid}")
 PY
-echo "  ✓ Evidence scan OK"
+echo "  OK: Evidence scan"
 
-# ── 3. Phase 3 reasoning (mock LLM, standard discovered from chunks) ─────────
-# Re-read STD_ID from disk — guards against macOS bash variable scope loss
+# 3. Phase 3 reasoning (mock LLM, standard discovered from chunks)
+# Re-read STD_ID from disk - guards against macOS bash variable scope loss
 STD_ID=$(cat "$PIPE_TMP/std_id.txt" 2>/dev/null || echo "")
 if [ -z "$STD_ID" ]; then
-  echo "  ✗ STD_ID lost between steps — chunker may have failed silently"
+  echo "  ERROR: STD_ID lost between steps - chunker may have failed silently"
   exit 1
 fi
 echo ""
-echo "[3/3] Running --reason for $STD_ID…"
+printf '[3/3] Running --reason for %s...\n' "$STD_ID"
 
 $PYTHON - "$DB" "$STD_ID" <<'PY'
 import sys, sqlite3
@@ -213,13 +213,13 @@ assessments = conn.execute("SELECT COUNT(*) FROM evidence_assessments").fetchone
 gap_reports = conn.execute("SELECT COUNT(*) FROM gap_reports").fetchone()[0]
 conn.close()
 print(f"  candidates={candidates}  assessments={assessments}  gap_reports={gap_reports}")
-assert candidates  > 0, f"FAIL: 0 candidates — matcher broken"
+assert candidates  > 0, f"FAIL: 0 candidates - matcher broken"
 assert assessments > 0, f"FAIL: 0 assessments"
 assert gap_reports > 0, f"FAIL: 0 gap_reports"
 PY
-echo "  ✓ Reasoning OK"
+echo "  OK: Reasoning"
 
 echo ""
 echo "========================================"
-echo "  ✅ ALL CHECKS PASSED — safe to sync"
+echo "  ALL CHECKS PASSED - safe to sync"
 echo "========================================"

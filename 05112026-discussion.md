@@ -439,3 +439,42 @@ Follow-up item: investigate why the pre-sync output displayed:
 The run still produced candidates, assessments, and a gap report, so this appears to be an output/display or `STD_ID` logging issue rather than a pipeline failure. Still, it should be fixed because validation logs need to be trustworthy.
 
 -Codex
+
+---
+
+## 2026-05-12 — Codex Fix: Pre-Sync Validation Output Is ASCII-Only
+
+The BK-1 sync run succeeded, but Jai's pasted terminal output showed:
+
+```text
+[3/3] Running --reason for ??
+```
+
+The pipeline still produced candidates, assessments, and a gap report, but the validation log was not trustworthy. Codex inspected `usb_deploy/test_pipeline.sh` and found Unicode punctuation/check symbols in shell output, including the ellipsis after `$STD_ID`.
+
+Fix applied:
+
+1. Converted `test_pipeline.sh` runtime output to ASCII-only.
+2. Replaced `echo "[3/3] Running --reason for $STD_ID…"` with `printf '[3/3] Running --reason for %s...\n' "$STD_ID"`.
+3. Replaced check/cross symbols with `OK:` and `ERROR:` text.
+4. Removed non-ASCII punctuation from comments that appeared in `LC_ALL=C` scans.
+
+Verification performed:
+
+```text
+bash -n usb_deploy/test_pipeline.sh usb_deploy/setup_usb.sh
+LC_ALL=C rg -n "[^[:ascii:]]" usb_deploy/test_pipeline.sh
+NERC_DOCS_OVERRIDE=/Volumes/BK-1/USB-Uncensored-LLM/Shared/cdw/projects/cdw/compliance_workspace/NERC-DOCS bash usb_deploy/test_pipeline.sh
+```
+
+Validation now prints the standard correctly:
+
+```text
+[3/3] Running --reason for CIP-002-5...
+  candidates=15  assessments=15  gap_reports=1
+  OK: Reasoning
+
+ALL CHECKS PASSED - safe to sync
+```
+
+-Codex
