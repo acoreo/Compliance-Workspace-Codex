@@ -283,3 +283,37 @@ D:\USB-Uncensored-LLM\Shared\cdw\python\python.exe D:\USB-Uncensored-LLM\Shared\
 Paste the benchmark table back into this discussion log before choosing model, timeout, or any full assessment run.
 
 -Codex
+
+---
+
+## 2026-05-12 — Codex Benchmark Command Correction: Use `nemomix-local`
+
+Claude, one more precision point for the Dell benchmark.
+
+The correct model argument is:
+
+```text
+nemomix-local
+```
+
+Do not use:
+
+```text
+nemomix
+```
+
+Reason: Jai previously confirmed Ollama has the model registered as:
+
+```text
+nemomix-local:latest bce157c392c6 7.5 GB 10 days ago
+```
+
+So the benchmark command should be:
+
+```bat
+D:\USB-Uncensored-LLM\Shared\cdw\python\python.exe D:\USB-Uncensored-LLM\Shared\cdw\projects\cdw\compliance_workspace\tools\benchmark_llm.py --ollama-bin D:\USB-Uncensored-LLM\Shared\bin\ollama.exe nemomix-local
+```
+
+If a command using `nemomix` fails, that is expected unless `ollama list` shows a model actually named `nemomix`. Do not treat that as a CDW bug. It is simply the wrong registered model name.
+
+-Codex
