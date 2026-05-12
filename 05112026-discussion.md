@@ -22,6 +22,80 @@ The biggest quality improvement is likely not a model swap. It is changing the a
 
 -Codex
 
+---
+
+## 2026-05-12 — Codex Run Log: Portable Script Sync to BK-1
+
+Codex reran the USB staging script after the portability pass:
+
+```text
+bash usb_deploy/setup_usb.sh /Volumes/BK-1
+```
+
+Important result:
+
+```text
+Target: /Volumes/BK-1
+Layout: USB-Uncensored-LLM/Shared
+NERC-DOCS: 88 PDF(s) found
+[3/3] Running --reason for CIP-002-5...
+  candidates=15  assessments=15  gap_reports=1
+  OK: Reasoning
+ALL CHECKS PASSED - safe to sync
+OK: Pipeline validated - proceeding with sync
+OK: CDW source synced.
+OK: Copied start_cdw.bat.
+OK: Copied run_cdw.bat.
+OK: Copied verify_env.bat.
+OK: Copied benchmark_llm.bat.
+BK-1 is ready.
+```
+
+Additional verification:
+
+```text
+ls -l /Volumes/BK-1/USB-Uncensored-LLM/Shared/cdw/scripts/windows/benchmark_llm.bat
+```
+
+Result: `benchmark_llm.bat` exists on BK-1 and was copied during the sync.
+
+Meaning: the USB now has the path-relative Windows launch scripts. On the Dell, the drive can be assigned a different drive letter and the scripts should still resolve the local Python, Ollama, CDW source, and benchmark paths from their own location.
+
+-Codex
+
+---
+
+## 2026-05-12 — Codex Portability Pass After Restart
+
+Jai restarted the Mac after seeing `configd` consume 100% CPU. Codex checked the current top CPU processes after restart; `configd` was no longer present in the hot process list. Current CPU usage was dominated by Codex/Chrome/WindowServer and short-lived shell utilities from the check itself.
+
+Portability changes reviewed/applied:
+
+1. Windows launch scripts no longer assume the USB is `D:` or that `%~d0\USB-Uncensored-LLM` exists.
+2. `start_cdw.bat`, `run_cdw.bat`, `verify_env.bat`, and the checked-in `install_offline.bat` now resolve the USB layout root relative to their own script location.
+3. Added `benchmark_llm.bat` so the Dell benchmark can be run from any assigned USB drive letter without typing the full Python/Ollama paths.
+4. `setup_usb.sh` now supports `USB_LAYOUT_ROOT` so the folder under the Mac mount point can be changed instead of forcing `USB-Uncensored-LLM`.
+5. `setup_usb.sh` now copies `start_cdw.bat`, `run_cdw.bat`, `verify_env.bat`, and `benchmark_llm.bat` to the USB during sync.
+6. `USB_MANIFEST.md` now documents `<USB drive>:\<layout-root>\Shared\...` instead of implying BK-1 must mount as `D:\`.
+
+Verification performed:
+
+```text
+bash -n usb_deploy/setup_usb.sh
+bash -n usb_deploy/test_pipeline.sh
+git diff --check
+rg -n "set \"USB=%~d0|D:\\|mounts as|Plug in BK-1" usb_deploy/Shared/cdw/scripts/windows usb_deploy/setup_usb.sh usb_deploy/USB_MANIFEST.md compliance_workspace/tools/benchmark_llm.py
+```
+
+Results:
+
+1. Shell syntax checks passed.
+2. `git diff --check` passed.
+3. The hardcoded Windows drive-letter pattern search returned no matches.
+4. Full Windows `.bat` execution still needs to be verified on the Dell after the next USB sync.
+
+-Codex
+
 ## 2026-05-11 — Project Plan (Phase Status)
 
 ### Phase 1 — Directory Scanner ✅ Complete

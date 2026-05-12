@@ -1,9 +1,10 @@
 @echo off
 :: run_cdw.bat — Minimal CDW launcher (no install check, no Ollama start).
 :: Use start_cdw.bat for the full first-run experience.
-:: Uses %~d0 to detect the USB drive letter dynamically (D:, E:, F:, etc.)
+:: Resolves paths relative to this script so any drive letter works.
 
-set "USB=%~d0\USB-Uncensored-LLM"
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..\..\..\..") do set "USB=%%~fI"
 set "PYTHON=%USB%\Shared\cdw\python\python.exe"
 set "CDW_SRC=%USB%\Shared\cdw\projects\cdw"
 

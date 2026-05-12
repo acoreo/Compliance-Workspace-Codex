@@ -1,0 +1,57 @@
+@echo off
+setlocal
+
+:: benchmark_llm.bat - Run the CDW Ollama benchmark from any USB drive letter.
+:: This script resolves paths relative to itself:
+::   <USB root>\Shared\cdw\scripts\windows\benchmark_llm.bat
+
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..\..\..\..") do set "USB=%%~fI"
+
+set "PYTHON=%USB%\Shared\cdw\python\python.exe"
+set "OLLAMA=%USB%\Shared\bin\ollama.exe"
+set "BENCH=%USB%\Shared\cdw\projects\cdw\compliance_workspace\tools\benchmark_llm.py"
+
+if "%~1"=="" (
+    set "MODELS=nemomix-local"
+) else (
+    set "MODELS=%*"
+)
+
+echo ============================================================
+echo   CDW LLM Benchmark
+echo   USB root : %USB%
+echo   Models   : %MODELS%
+echo ============================================================
+echo.
+
+if not exist "%PYTHON%" (
+    echo ERROR: Python not found at:
+    echo        %PYTHON%
+    pause
+    exit /b 1
+)
+
+if not exist "%OLLAMA%" (
+    echo ERROR: ollama.exe not found at:
+    echo        %OLLAMA%
+    pause
+    exit /b 1
+)
+
+if not exist "%BENCH%" (
+    echo ERROR: benchmark_llm.py not found at:
+    echo        %BENCH%
+    echo        Re-sync the USB from the Mac using setup_usb.sh.
+    pause
+    exit /b 1
+)
+
+"%PYTHON%" "%BENCH%" --ollama-bin "%OLLAMA%" %MODELS%
+set "RC=%ERRORLEVEL%"
+echo.
+if not "%RC%"=="0" (
+    echo Benchmark failed with exit code %RC%.
+)
+pause
+exit /b %RC%

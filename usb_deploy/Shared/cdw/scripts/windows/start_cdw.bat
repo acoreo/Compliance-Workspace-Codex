@@ -2,10 +2,11 @@
 setlocal enabledelayedexpansion
 
 :: start_cdw.bat — CDW daily launcher for Windows
-:: Uses %~d0 to detect the USB drive letter dynamically (D:, E:, F:, etc.)
+:: Resolves paths relative to this script so any drive letter works.
 :: Double-click this file or run it from CMD — no other setup needed after first run.
 
-set "USB=%~d0\USB-Uncensored-LLM"
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..\..\..\..") do set "USB=%%~fI"
 set "PYTHON=%USB%\Shared\cdw\python\python.exe"
 set "OLLAMA=%USB%\Shared\bin\ollama.exe"
 set "OLLAMA_MODELS=%USB%\Shared\models\ollama_data"

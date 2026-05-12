@@ -2,9 +2,10 @@
 setlocal enabledelayedexpansion
 
 :: install_offline.bat — One-time offline setup for CDW on Windows
-:: Uses %~d0 to detect the USB drive letter dynamically (works on D:, E:, F:, etc.)
+:: Resolves paths relative to this script so any drive letter works.
 
-set "USB=%~d0\USB-Uncensored-LLM"
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..\..\..\..") do set "USB=%%~fI"
 set "PYTHON=%USB%\Shared\cdw\python\python.exe"
 set "WHEELS=%USB%\Shared\cdw\wheels"
 set "GET_PIP=%USB%\Shared\cdw\get-pip.py"

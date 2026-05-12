@@ -1,32 +1,34 @@
 #!/bin/bash
 # =============================================================================
-# setup_usb.sh — CDW (Compliance Discovery Workspace) USB staging script
+# setup_usb.sh - CDW (Compliance Discovery Workspace) USB staging script
 #
 # Usage:
 #   bash setup_usb.sh [/Volumes/DRIVE_NAME]
 #
 # Defaults to /Volumes/BK-1 if no argument is given.
+# Set USB_LAYOUT_ROOT to override the folder under the mount point.
 #
 # Re-run safe: every step checks if its work is already done and skips it.
 # =============================================================================
 
 set -euo pipefail
 
-# ─── Colour helpers ──────────────────────────────────────────────────────────
+# Color helpers
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 
-info()    { echo -e "${CYAN}  →  $*${RESET}"; }
-success() { echo -e "${GREEN}  ✓  $*${RESET}"; }
-warn()    { echo -e "${YELLOW}  ⚠  $*${RESET}"; }
-error()   { echo -e "${RED}  ✗  $*${RESET}"; }
+info()    { echo -e "${CYAN}  -> $*${RESET}"; }
+success() { echo -e "${GREEN}  OK: $*${RESET}"; }
+warn()    { echo -e "${YELLOW}  WARN: $*${RESET}"; }
+error()   { echo -e "${RED}  ERROR: $*${RESET}"; }
 header()  { echo -e "\n${BOLD}$*${RESET}"; }
 
-# ─── Paths ───────────────────────────────────────────────────────────────────
+# Paths
 SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="$(cd "$SETUP_DIR/.." && pwd)"
 USB="${1:-/Volumes/BK-1}"
-BASE="$USB/USB-Uncensored-LLM/Shared"
+USB_LAYOUT_ROOT="${USB_LAYOUT_ROOT:-USB-Uncensored-LLM}"
+BASE="$USB/$USB_LAYOUT_ROOT/Shared"
 MODELS_DIR="$BASE/models"
 BIN_DIR="$BASE/bin"
 CDW_DIR="$BASE/cdw"
@@ -45,7 +47,7 @@ MIN_FREE_GB=25
 GGUF_MIN_MB=7000
 WHEEL_MIN_COUNT=50
 
-# ─── Step result tracking ─────────────────────────────────────────────────────
+# Step result tracking
 # Parallel arrays instead of `declare -A` so this works on macOS bash 3.2.
 STEP_KEYS=()
 STEP_VALUES=()
@@ -84,7 +86,7 @@ step_status_get() {
   fi
 }
 
-# ─── Step runner helper ───────────────────────────────────────────────────────
+# Step runner helper
 # Usage: run_step <key> <label> <function>
 run_step() {
   local key="$1" label="$2" fn="$3" current
@@ -93,7 +95,7 @@ run_step() {
     current=$(step_status_get "$key")
     # Preserve SKIPPED if the step marked itself; otherwise mark DONE.
     # (Status is pre-initialised to PENDING in main, so we can't rely on
-    # ${current:-DONE} — PENDING is non-empty and would persist.)
+    # ${current:-DONE} would preserve PENDING because it is non-empty.
     if [[ "$current" != "SKIPPED" ]]; then
       step_status_set "$key" "DONE"
     fi
@@ -112,6 +114,7 @@ abort_summary() {
   echo -e "${RED}${BOLD}Aborting USB staging before any download or sync steps.${RESET}"
   echo "Fix the issue above and re-run:"
   echo "  bash usb_deploy/setup_usb.sh /Volumes/BK-1"
+  echo "  USB_LAYOUT_ROOT=YourRootFolder bash usb_deploy/setup_usb.sh /Volumes/YourDrive"
   echo ""
 }
 
@@ -140,7 +143,7 @@ step_validate_usb() {
   if [[ -n "$free_gb" ]]; then
     info "USB free space: ${free_gb} GB"
     if (( free_gb < MIN_FREE_GB )); then
-      warn "Only ${free_gb} GB free — recommended minimum is ${MIN_FREE_GB} GB."
+      warn "Only ${free_gb} GB free - recommended minimum is ${MIN_FREE_GB} GB."
       warn "The GGUF model alone is ~8 GB. Proceeding anyway."
     fi
   else
@@ -165,11 +168,11 @@ step_download_gguf() {
     local size_mb
     size_mb=$(du -m "$GGUF_FILE" 2>/dev/null | cut -f1)
     if (( size_mb >= GGUF_MIN_MB )); then
-      success "GGUF already exists (${size_mb} MB ≥ ${GGUF_MIN_MB} MB). Skipping."
+      success "GGUF already exists (${size_mb} MB >= ${GGUF_MIN_MB} MB). Skipping."
       mark_skipped "2/8"
       return 0
     else
-      warn "GGUF found but only ${size_mb} MB — resuming download."
+      warn "GGUF found but only ${size_mb} MB - resuming download."
     fi
   fi
 
@@ -244,16 +247,16 @@ step_import_ollama_model() {
   fi
 
   if [[ ! -f "$OLLAMA_MAC" ]]; then
-    error "ollama-darwin not found at '$OLLAMA_MAC' — cannot import model."
+    error "ollama-darwin not found at '$OLLAMA_MAC' - cannot import model."
     return 1
   fi
 
   if [[ ! -f "$GGUF_FILE" ]]; then
-    error "GGUF model not found at '$GGUF_FILE' — cannot import model."
+    error "GGUF model not found at '$GGUF_FILE' - cannot import model."
     return 1
   fi
 
-  # Write Modelfile (path is relative — we'll cd into MODELS_DIR before running)
+  # Write Modelfile (path is relative; we cd into MODELS_DIR before running)
   info "Writing Modelfile..."
   cat > "$MODELFILE" <<'MODELFILE_EOF'
 FROM ./NemoMix-Unleashed-12B-Q4_K_M.gguf
@@ -344,7 +347,7 @@ step_download_python() {
     sed -i '' 's/#import site/import site/' "$pth_file"
     success "python312._pth patched."
   else
-    warn "python312._pth not found — skipping patch."
+    warn "python312._pth not found - skipping patch."
   fi
 
   rm -f "$zip_path"
@@ -391,7 +394,7 @@ step_download_wheels() {
       && (( has_pip > 0 )) \
       && (( has_setuptools > 0 )) \
       && (( has_wheel > 0 )); then
-    success "$existing .whl files already in wheels dir (≥ $WHEEL_MIN_COUNT) and pip/setuptools/wheel present. Skipping."
+    success "$existing .whl files already in wheels dir (>= $WHEEL_MIN_COUNT) and pip/setuptools/wheel present. Skipping."
     mark_skipped "7/8"
     return 0
   fi
@@ -402,7 +405,7 @@ step_download_wheels() {
   fi
 
   if ! command -v python3 &>/dev/null; then
-    error "python3 not found on this Mac — cannot download wheels."
+    error "python3 not found on this Mac - cannot download wheels."
     return 1
   fi
 
@@ -422,7 +425,7 @@ step_download_wheels() {
     return 1
   fi
 
-  # ── Bootstrappers + ALL Windows-conditional extras (single call) ─────────────
+  # Bootstrappers + ALL Windows-conditional extras (single call)
   # Why one call without --platform/--python-version:
   #   pip download -r requirements.txt --platform win_amd64 silently skips any
   #   package whose marker is sys_platform == "win32" because we're on macOS.
@@ -430,14 +433,14 @@ step_download_wheels() {
   #   correct pure-Python (py3-none-any) wheels that install fine on Windows.
   #
   # Packages covered:
-  #   pip / setuptools / wheel  — must be in the cache for get-pip.py bootstrap
-  #   tzdata                    — pandas Windows conditional dep
-  #   colorama                  — loguru / click / tqdm Windows conditional dep
-  #   win32-setctime            — loguru Windows conditional dep
-  #   pyreadline3               — readline substitute for Windows
-  #   windows-curses            — curses for Windows (has a PyPI wheel)
+  #   pip / setuptools / wheel  - must be in the cache for get-pip.py bootstrap
+  #   tzdata                    - pandas Windows conditional dep
+  #   colorama                  - loguru / click / tqdm Windows conditional dep
+  #   win32-setctime            - loguru Windows conditional dep
+  #   pyreadline3               - readline substitute for Windows
+  #   windows-curses            - curses for Windows (has a PyPI wheel)
   #
-  # NOTE: win-unicode-console has NO wheel on PyPI — handled by stub below.
+  # NOTE: win-unicode-console has NO wheel on PyPI; handled by stub below.
   info "Downloading bootstrappers + Windows-only conditional extras ..."
   info "  (pip, setuptools, wheel, tzdata, colorama, win32-setctime, pyreadline3, windows-curses)"
   if python3 -m pip download \
@@ -449,11 +452,11 @@ step_download_wheels() {
     subtotal=$(find "$WHEELS_DIR" -name "*.whl" | wc -l | tr -d ' ')
     success "Bootstrappers + extras downloaded. Running total: $subtotal wheel files."
   else
-    warn "Some extras had download errors — see output above."
+    warn "Some extras had download errors - see output above."
     warn "(win_unicode_console failures are expected; stub wheel is created next.)"
   fi
 
-  # ── win-unicode-console stub wheel ──────────────────────────────────────────
+  # win-unicode-console stub wheel
   # This package has no wheel on PyPI.  Python 3.12+ includes native Unicode
   # console support, so a no-op stub satisfies any import without side effects.
   info "Creating win_unicode_console stub wheel (no PyPI wheel exists)..."
@@ -464,7 +467,7 @@ wheels_dir = "$WHEELS_DIR"
 wheel_path = os.path.join(wheels_dir, "win_unicode_console-0.5-py3-none-any.whl")
 
 if os.path.exists(wheel_path):
-    print("  stub already present — skipping.")
+    print("  stub already present - skipping.")
 else:
     pkg_dir   = "win_unicode_console"
     dist_info = "win_unicode_console-0.5.dist-info"
@@ -516,7 +519,7 @@ PYSTUB
 
   local total_final
   total_final=$(find "$WHEELS_DIR" -name "*.whl" | wc -l | tr -d ' ')
-  success "Wheel cache complete — $total_final total .whl files."
+  success "Wheel cache complete - $total_final total .whl files."
 }
 
 # =============================================================================
@@ -549,10 +552,10 @@ step_copy_cdw() {
     any_failed=1
   fi
 
-  # ── Windows batch scripts ────────────────────────────────────────────────────
+  # Windows batch scripts
   mkdir -p "$SCRIPTS_WIN"
 
-  # install_offline.bat — always generated inline so the flags are guaranteed
+  # install_offline.bat is always generated inline so the flags are guaranteed
   # correct regardless of what the source copy says.
   # Key: --prefer-binary (not --only-binary=:all:) so pip can fall back to
   # building from sdist for any package that lacks a pre-built wheel.
@@ -561,17 +564,17 @@ step_copy_cdw() {
 @echo off
 setlocal EnableDelayedExpansion
 
-:: ─── CDW Offline Installer ───────────────────────────────────────────────────
+:: CDW Offline Installer
 :: Bootstraps pip from the local wheel cache, then installs all CDW requirements
 :: with no internet access required.
 ::
-:: Layout expected on the USB drive:
-::   USB-Uncensored-LLM\Shared\cdw\
-::     python\          — Python 3.12 embeddable
-::     wheels\          — pre-downloaded .whl files
-::     requirements\    — cdw.txt
+:: Layout expected under the selected USB layout root:
+::   Shared\cdw\
+::     python\          - Python 3.12 embeddable
+::     wheels\          - pre-downloaded .whl files
+::     requirements\    - cdw.txt
 ::     get-pip.py
-::     scripts\windows\ — this script lives here
+::     scripts\windows\ - this script lives here
 
 set "SCRIPT_DIR=%~dp0"
 set "CDW_DIR=%SCRIPT_DIR%..\..\\"
@@ -589,7 +592,7 @@ echo.
 :: Verify Python exists
 if not exist "%PYTHON%" (
     echo ERROR: python.exe not found at %PYTHON%
-    echo        Ensure the full USB-Uncensored-LLM\Shared folder was copied.
+    echo        Ensure the full Shared folder was copied to the USB layout root.
     pause
     exit /b 1
 )
@@ -633,16 +636,21 @@ BAT_EOF
     any_failed=1
   fi
 
-  # start_cdw.bat — copy from source if present, otherwise warn and skip
+  # Copy launcher/check scripts from source if present. install_offline.bat is
+  # generated above so its offline pip flags are guaranteed; the others are
+  # copied so drive-letter portability fixes reach the USB.
   local bat_src="$SRC_DIR/usb_deploy/Shared/cdw/scripts/windows"
-  if [[ -f "$bat_src/start_cdw.bat" ]]; then
-    info "Copying start_cdw.bat..."
-    cp "$bat_src/start_cdw.bat" "$SCRIPTS_WIN/start_cdw.bat" \
-      && success "Copied start_cdw.bat." \
-      || { error "Failed to copy start_cdw.bat."; any_failed=1; }
-  else
-    warn "start_cdw.bat not found in $bat_src — skipping."
-  fi
+  local bat_name
+  for bat_name in start_cdw.bat run_cdw.bat verify_env.bat benchmark_llm.bat; do
+    if [[ -f "$bat_src/$bat_name" ]]; then
+      info "Copying $bat_name..."
+      cp "$bat_src/$bat_name" "$SCRIPTS_WIN/$bat_name" \
+        && success "Copied $bat_name." \
+        || { error "Failed to copy $bat_name."; any_failed=1; }
+    else
+      warn "$bat_name not found in $bat_src - skipping."
+    fi
+  done
 
   return $any_failed
 }
@@ -655,8 +663,9 @@ main() {
   echo "============================================================"
   echo "  CDW USB Staging Script"
   echo "  Target: $USB"
+  echo "  Layout: $USB_LAYOUT_ROOT/Shared"
   echo "  Date:   $(date)"
-  echo "============================================================${RESET}"
+  echo -e "============================================================${RESET}"
 
   # Initialise all statuses as PENDING so we can detect uncompleted steps
   for k in "1/8" "2/8" "3/8" "4/8" "5/8" "6/8" "7/8" "8/8"; do
@@ -672,9 +681,9 @@ main() {
     exit 1
   fi
 
-  # ─── Pre-sync pipeline validation ─────────────────────────────────────────
+  # Pre-sync pipeline validation
   echo ""
-  echo -e "${BOLD}Pre-sync check: running pipeline validation…${RESET}"
+  echo -e "${BOLD}Pre-sync check: running pipeline validation...${RESET}"
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local nerc_docs_override=""
   if [[ ! -d "$SRC_DIR/compliance_workspace/NERC-DOCS" \
@@ -683,14 +692,14 @@ main() {
     info "Using USB NERC-DOCS for validation: $nerc_docs_override"
   fi
   if NERC_DOCS_OVERRIDE="$nerc_docs_override" bash "$SCRIPT_DIR/test_pipeline.sh"; then
-    echo -e "${GREEN}  ✓ Pipeline validated — proceeding with sync${RESET}"
+    echo -e "${GREEN}  OK: Pipeline validated - proceeding with sync${RESET}"
   else
-    echo -e "${RED}  ✗ Pipeline validation FAILED — aborting sync${RESET}"
+    echo -e "${RED}  ERROR: Pipeline validation FAILED - aborting sync${RESET}"
     echo "    Fix the errors above before re-running setup_usb.sh"
     exit 1
   fi
 
-  # Run remaining steps — errors are caught inside run_step, script continues
+  # Run remaining steps. Errors are caught inside run_step; script continues.
   run_step "2/8" "Download NemoMix 12B GGUF"             step_download_gguf    || true
   run_step "3/8" "Download Ollama binaries"              step_download_ollama  || true
   run_step "4/8" "Import NemoMix into Ollama registry"   step_import_ollama_model || true
@@ -699,16 +708,16 @@ main() {
   run_step "7/8" "Download Windows pip wheels"           step_download_wheels  || true
   run_step "8/8" "Copy CDW source and launch scripts"    step_copy_cdw         || true
 
-  # ─── Summary ────────────────────────────────────────────────────────────────
+  # Summary
   echo -e "\n${BOLD}============================================================"
   echo "  SUMMARY"
-  echo "============================================================${RESET}"
+  echo -e "============================================================${RESET}"
 
   local labels=(
     "1/8|Validate USB"
     "2/8|Download NemoMix GGUF"
     "3/8|Download Ollama binaries"
-    "4/8|Import NemoMix → Ollama"
+    "4/8|Import NemoMix to Ollama"
     "5/8|Download Python 3.12 embeddable"
     "6/8|Download get-pip.py"
     "7/8|Download Windows wheels"
@@ -722,9 +731,9 @@ main() {
     local status
     status=$(step_status_get "$key" "PENDING")
     case "$status" in
-      DONE)    echo -e "  ${GREEN}✓ DONE   ${RESET}  [$key] $label" ;;
-      SKIPPED) echo -e "  ${CYAN}– SKIPPED${RESET}  [$key] $label" ;;
-      FAILED)  echo -e "  ${RED}✗ FAILED ${RESET}  [$key] $label"; all_ok=0 ;;
+      DONE)    echo -e "  ${GREEN}DONE   ${RESET}  [$key] $label" ;;
+      SKIPPED) echo -e "  ${CYAN}SKIPPED${RESET}  [$key] $label" ;;
+      FAILED)  echo -e "  ${RED}FAILED ${RESET}  [$key] $label"; all_ok=0 ;;
       *)       echo -e "  ${YELLOW}? PENDING${RESET}  [$key] $label"; all_ok=0 ;;
     esac
   done
@@ -733,13 +742,13 @@ main() {
   if (( all_ok == 1 )); then
     echo -e "${GREEN}${BOLD}BK-1 is ready.${RESET}"
   else
-    echo -e "${YELLOW}${BOLD}BK-1 staging completed with warnings/failures — see above.${RESET}"
+    echo -e "${YELLOW}${BOLD}BK-1 staging completed with warnings/failures - see above.${RESET}"
   fi
-  echo -e "${BOLD}On the Dell: navigate to USB-Uncensored-LLM\\Shared\\cdw\\scripts\\windows\\ and run start_cdw.bat${RESET}"
+  echo -e "${BOLD}On the Dell: open $USB_LAYOUT_ROOT\\Shared\\cdw\\scripts\\windows\\ and run start_cdw.bat${RESET}"
   echo ""
 }
 
-# ─── Entry point ─────────────────────────────────────────────────────────────
+# Entry point
 # Wrap main so that set -e inside a step function won't kill the whole script
 # before we can record the failure. Each step function returns 0/1 explicitly.
 set +e
