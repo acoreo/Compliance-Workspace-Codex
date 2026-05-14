@@ -15,15 +15,15 @@ set "OLLAMA_HOST=127.0.0.1:11434"
 set "BENCH=%USB%\Shared\cdw\projects\cdw\compliance_workspace\tools\benchmark_llm.py"
 
 if "%~1"=="" (
-    set "MODELS=nemomix-local"
+    set "BENCH_ARGS=nemomix-local"
 ) else (
-    set "MODELS=%*"
+    set "BENCH_ARGS=%*"
 )
 
 echo ============================================================
 echo   CDW LLM Benchmark
 echo   USB root : %USB%
-echo   Models   : %MODELS%
+echo   Args     : %BENCH_ARGS%
 echo   Store    : %OLLAMA_MODELS%
 echo ============================================================
 echo.
@@ -59,7 +59,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%PYTHON%" "%BENCH%" --ollama-bin "%OLLAMA%" %MODELS%
+"%PYTHON%" "%BENCH%" --ollama-bin "%OLLAMA%" %BENCH_ARGS%
 set "RC=%ERRORLEVEL%"
 echo.
 if not "%RC%"=="0" (

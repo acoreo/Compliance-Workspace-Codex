@@ -399,6 +399,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "from `ollama ps`, matching the Dell runtime check."
         ),
     )
+    parser.add_argument(
+        "--calls",
+        choices=("both", "cold", "warm"),
+        default="both",
+        help="Which calls to run. Use warm to avoid long cold-load timing.",
+    )
     return parser.parse_args(argv)
 
 
@@ -425,16 +431,18 @@ def main(argv: list[str]) -> int:
     results: list[BenchmarkResult] = []
     for model in args.models:
         print(f"\n== {model} ==")
-        print("Unloading model before cold call...")
-        unload_model(args.base_url, model)
-        print("Cold call...")
-        results.append(
-            run_call(args.base_url, model, "cold", args.timeout, args.keep_alive, ollama_bin)
-        )
-        print("Warm call...")
-        results.append(
-            run_call(args.base_url, model, "warm", args.timeout, args.keep_alive, ollama_bin)
-        )
+        if args.calls in ("both", "cold"):
+            print("Unloading model before cold call...")
+            unload_model(args.base_url, model)
+            print("Cold call...")
+            results.append(
+                run_call(args.base_url, model, "cold", args.timeout, args.keep_alive, ollama_bin)
+            )
+        if args.calls in ("both", "warm"):
+            print("Warm call...")
+            results.append(
+                run_call(args.base_url, model, "warm", args.timeout, args.keep_alive, ollama_bin)
+            )
 
     print("\nPaste this table into 05112026-discussion.md:")
     print_table(results)
