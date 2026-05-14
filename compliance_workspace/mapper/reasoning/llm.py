@@ -94,17 +94,26 @@ class LlamaCppBackend:
             return False
 
     def list_models(self) -> list[str]:
-        """Return the list of model names registered in Ollama.
+        """Return model names registered in Ollama.
 
         Returns an empty list if Ollama is unreachable or the response is malformed.
+        Includes both full Ollama names such as ``llama3.2:3b`` and bare aliases
+        such as ``nemomix-local`` for ``nemomix-local:latest``.
         """
         try:
             url = f"{self._ollama_root()}/api/tags"
             req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
-            # Each entry has a "name" field like "nemomix-local:latest"
-            return [m["name"].split(":")[0] for m in data.get("models", [])]
+            names: list[str] = []
+            for model in data.get("models", []):
+                name = model.get("name")
+                if not name:
+                    continue
+                names.append(name)
+                if name.endswith(":latest"):
+                    names.append(name.rsplit(":", 1)[0])
+            return names
         except Exception:
             return []
 
