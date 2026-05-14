@@ -41,6 +41,7 @@ PYTHON_DIR="$CDW_DIR/python"
 WHEELS_DIR="$CDW_DIR/wheels"
 REQ_FILE="$SRC_DIR/usb_deploy/Shared/cdw/requirements/cdw.txt"
 SCRIPTS_WIN="$CDW_DIR/scripts/windows"
+SCRIPTS_MAC="$CDW_DIR/scripts/mac"
 
 OLLAMA_PORT=11435
 MIN_FREE_GB=25
@@ -553,7 +554,7 @@ step_copy_cdw() {
   fi
 
   # Windows batch scripts
-  mkdir -p "$SCRIPTS_WIN"
+  mkdir -p "$SCRIPTS_WIN" "$SCRIPTS_MAC"
 
   # install_offline.bat is always generated inline so the flags are guaranteed
   # correct regardless of what the source copy says.
@@ -649,6 +650,20 @@ BAT_EOF
         || { error "Failed to copy $bat_name."; any_failed=1; }
     else
       warn "$bat_name not found in $bat_src - skipping."
+    fi
+  done
+
+  local mac_src="$SRC_DIR/usb_deploy/Shared/cdw/scripts/mac"
+  local mac_name
+  for mac_name in pull_fast_model_mac.sh; do
+    if [[ -f "$mac_src/$mac_name" ]]; then
+      info "Copying $mac_name..."
+      cp "$mac_src/$mac_name" "$SCRIPTS_MAC/$mac_name" \
+        && chmod +x "$SCRIPTS_MAC/$mac_name" \
+        && success "Copied $mac_name." \
+        || { error "Failed to copy $mac_name."; any_failed=1; }
+    else
+      warn "$mac_name not found in $mac_src - skipping."
     fi
   done
 

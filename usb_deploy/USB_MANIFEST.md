@@ -60,6 +60,7 @@ as long as the `Shared\cdw\scripts\windows\` structure is preserved.
             │   │   ├── pull_fast_model.bat         ← Pulls llama3.2:3b into USB store
             │   │   └── verify_env.bat              ← Checks Python + deps are OK
             │   └── mac\
+            │       ├── pull_fast_model_mac.sh
             │       ├── start_env.sh
             │       ├── sync_one.sh
             │       ├── sync_wheels.sh
@@ -107,6 +108,6 @@ as long as the `Shared\cdw\scripts\windows\` structure is preserved.
 2. Double-click `<USB drive>:\<layout-root>\Shared\cdw\scripts\windows\start_cdw.bat`
 3. First run installs all deps (~2 min), then launches CDW
 4. In a separate window: `<USB drive>:\<layout-root>\Shared\cdw\scripts\windows\start_ollama.bat`
-5. Optional fast-model setup: `<USB drive>:\<layout-root>\Shared\cdw\scripts\windows\pull_fast_model.bat`
+5. Preferred fast-model setup: run `/Volumes/BK-1/<layout-root>/Shared/cdw/scripts/mac/pull_fast_model_mac.sh` on the Mac before moving the USB to the Dell
 6. Fast-model benchmark: `<USB drive>:\<layout-root>\Shared\cdw\scripts\windows\benchmark_fast.bat`
 7. Run assessment: `python main.py --reason --scan-id 1 --standard MOD-025-2`

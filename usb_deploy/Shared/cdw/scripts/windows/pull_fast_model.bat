@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-:: pull_fast_model.bat - Pull a smaller benchmark model into the USB Ollama store.
+:: pull_fast_model.bat - Emergency Dell-side model pull into the USB Ollama store.
+:: Preferred workflow: run Shared\cdw\scripts\mac\pull_fast_model_mac.sh on the Mac instead.
 :: Default candidate: llama3.2:3b (~2 GB in Ollama library).
 
 set "SCRIPT_DIR=%~dp0"
@@ -24,6 +25,19 @@ echo   Model store : %OLLAMA_MODELS%
 echo   Model       : %MODEL%
 echo ============================================================
 echo.
+
+echo WARNING: This downloads a model from the Dell.
+echo Preferred project workflow is Mac-side download, then run from USB on Dell.
+echo To proceed anyway, set CDW_ALLOW_DELL_DOWNLOAD=1 and rerun this script.
+echo.
+
+if not "%CDW_ALLOW_DELL_DOWNLOAD%"=="1" (
+    echo Blocked by default to avoid surprise Dell network downloads.
+    echo Mac-side command:
+    echo   /Volumes/BK-1/USB-Uncensored-LLM/Shared/cdw/scripts/mac/pull_fast_model_mac.sh
+    pause
+    exit /b 2
+)
 
 if not exist "%OLLAMA%" (
     echo ERROR: ollama.exe not found at:
