@@ -219,6 +219,71 @@ assert gap_reports > 0, f"FAIL: 0 gap_reports"
 PY
 echo "  OK: Reasoning"
 
+# 4. Windows launcher static checks
+echo ""
+echo "[4/4] Checking Windows launcher syntax hazards..."
+
+$PYTHON - "$SCRIPT_DIR/Shared/cdw/scripts/windows" <<'PY'
+import pathlib
+import sys
+
+script_dir = pathlib.Path(sys.argv[1])
+required = [
+    "start_cdw.bat",
+    "start_ollama.bat",
+    "run_cdw.bat",
+    "verify_env.bat",
+    "benchmark_llm.bat",
+    "benchmark_fast.bat",
+    "probe_llm_behavior.bat",
+    "pull_fast_model.bat",
+    "sync_to_dell.bat",
+]
+
+errors: list[str] = []
+for name in required:
+    path = script_dir / name
+    if not path.exists():
+        errors.append(f"missing required launcher: {path}")
+
+for path in sorted(script_dir.glob("*.bat")):
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lowered = text.lower()
+    if "powershell" in lowered and ("^&" in text or "^|" in text or "2^>^&1" in text):
+        errors.append(
+            f"{path}: PowerShell command contains CMD caret escapes; "
+            "this can produce AmpersandNotAllowed parser failures on Windows"
+        )
+    if "tee-object" in lowered and ("^|" in text or "^&" in text):
+        errors.append(f"{path}: Tee-Object pipeline is mixed with CMD caret escapes")
+    if "\r\r\n" in text:
+        errors.append(f"{path}: malformed CRLF sequence")
+
+sync = script_dir / "sync_to_dell.bat"
+if sync.exists():
+    sync_text = sync.read_text(encoding="utf-8", errors="replace")
+    expected = [
+        'set "LOCAL_BENCH=%DEST_ROOT%\\benchmark_fast_local.bat"',
+        'set "LOCAL_ALL=%DEST_ROOT%\\run_all_local_tests.bat"',
+        "benchmark_fast_local.log",
+        "latest_benchmark_fast_local.log",
+        "run_all_local_tests.log",
+        "behavior_probe_raw.jsonl",
+    ]
+    for needle in expected:
+        if needle not in sync_text:
+            errors.append(f"{sync}: missing expected generated-launcher marker: {needle}")
+
+if errors:
+    print("  ERROR: Windows launcher static checks failed")
+    for error in errors:
+        print(f"  - {error}")
+    raise SystemExit(1)
+
+print(f"  checked={len(list(script_dir.glob('*.bat')))} batch file(s)")
+PY
+echo "  OK: Windows launchers"
+
 echo ""
 echo "========================================"
 echo "  ALL CHECKS PASSED - safe to sync"
