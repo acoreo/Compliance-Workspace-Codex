@@ -9,6 +9,10 @@ for %%I in ("%SCRIPT_DIR%..\..\..\..") do set "USB=%%~fI"
 
 set "PYTHON=%USB%\Shared\cdw\python\python.exe"
 set "PROBE=%USB%\Shared\cdw\projects\cdw\compliance_workspace\tools\probe_llm_behavior.py"
+set "LOG_DIR=%USB%\Shared\cdw\run_logs"
+set "LOG_APPEND=%LOG_DIR%\probe_llm_behavior.log"
+set "LOG_LATEST=%LOG_DIR%\latest_probe_llm_behavior.log"
+set "RAW_LOG=%LOG_DIR%\behavior_probe_raw.jsonl"
 
 if "%~1"=="" (
     set "MODEL=llama3.2:3b"
@@ -47,7 +51,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-"%PYTHON%" "%PROBE%" "%MODEL%"
+mkdir "%LOG_DIR%" 2>nul
+echo Writing console log to:
+echo   %LOG_APPEND%
+echo   %LOG_LATEST%
+echo Writing raw JSONL to:
+echo   %RAW_LOG%
+echo.
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { & '%PYTHON%' '%PROBE%' --raw-log '%RAW_LOG%' '%MODEL%' 2>&1 | Tee-Object -FilePath '%LOG_APPEND%' -Append | Tee-Object -FilePath '%LOG_LATEST%'; exit $LASTEXITCODE }"
 set "RC=%ERRORLEVEL%"
 echo.
 if not "%RC%"=="0" (

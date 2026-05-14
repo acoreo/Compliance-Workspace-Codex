@@ -26,6 +26,9 @@ set "USER_RAW=%USERPROFILE%\data\benchmark_raw.jsonl"
 set "DEST_RAW=%DEST_DATA%\benchmark_raw.jsonl"
 set "LOCAL_BENCH=%DEST_ROOT%\benchmark_fast_local.bat"
 set "LOCAL_OLLAMA=%DEST_ROOT%\start_ollama_local.bat"
+set "LOG_DIR=%USB%\Shared\cdw\run_logs"
+set "SYNC_LOG=%LOG_DIR%\sync_to_dell.log"
+set "SYNC_LATEST=%LOG_DIR%\latest_sync_to_dell.log"
 
 echo ============================================================
 echo   CDW Sync to Dell Local Workspace
@@ -48,10 +51,21 @@ mkdir "%DEST_CDW%" 2>nul
 mkdir "%DEST_BIN%" 2>nul
 mkdir "%DEST_MODELS%" 2>nul
 mkdir "%DEST_DATA%" 2>nul
+mkdir "%LOG_DIR%" 2>nul
+
+echo [%DATE% %TIME%] Starting sync_to_dell.bat >> "%SYNC_LOG%"
+echo USB=%USB% >> "%SYNC_LOG%"
+echo DEST_ROOT=%DEST_ROOT% >> "%SYNC_LOG%"
+copy /Y NUL "%SYNC_LATEST%" >nul
+echo [%DATE% %TIME%] Starting sync_to_dell.bat >> "%SYNC_LATEST%"
+echo USB=%USB% >> "%SYNC_LATEST%"
+echo DEST_ROOT=%DEST_ROOT% >> "%SYNC_LATEST%"
 
 echo Copying CDW runtime/source to local disk...
 echo Preserving local data, reports, logs, and benchmark outputs.
 echo.
+echo Copying CDW runtime/source to local disk... >> "%SYNC_LOG%"
+echo Copying CDW runtime/source to local disk... >> "%SYNC_LATEST%"
 
 robocopy "%SRC_CDW%" "%DEST_CDW%" /E ^
     /XD ^
@@ -60,7 +74,8 @@ robocopy "%SRC_CDW%" "%DEST_CDW%" /E ^
         "%SRC_CDW%\projects\cdw\logs" ^
         "%SRC_CDW%\projects\cdw\.git" ^
         "%SRC_CDW%\projects\cdw\__pycache__" ^
-    /XF "*.pyc" "*.pyo" ".DS_Store"
+    /XF "*.pyc" "*.pyo" ".DS_Store" ^
+    /TEE /LOG+:"%SYNC_LOG%"
 
 set "RC=%ERRORLEVEL%"
 if %RC% GEQ 8 (
@@ -71,7 +86,7 @@ if %RC% GEQ 8 (
 
 echo.
 echo Copying Ollama binaries to local disk...
-robocopy "%SRC_BIN%" "%DEST_BIN%" /E
+robocopy "%SRC_BIN%" "%DEST_BIN%" /E /TEE /LOG+:"%SYNC_LOG%"
 set "RC=%ERRORLEVEL%"
 if %RC% GEQ 8 (
     echo ERROR: robocopy failed copying bin with exit code %RC%.
@@ -82,7 +97,7 @@ if %RC% GEQ 8 (
 echo.
 echo Copying Ollama model store to local disk...
 echo This can take a while because model files are large.
-robocopy "%SRC_MODELS%" "%DEST_MODELS%" /E
+robocopy "%SRC_MODELS%" "%DEST_MODELS%" /E /TEE /LOG+:"%SYNC_LOG%"
 set "RC=%ERRORLEVEL%"
 if %RC% GEQ 8 (
     echo ERROR: robocopy failed copying models with exit code %RC%.
@@ -123,15 +138,23 @@ echo   %LOCAL_BENCH%
 >> "%LOCAL_BENCH%" echo set "BENCH=%DEST_PROJECT%\compliance_workspace\tools\benchmark_llm.py"
 >> "%LOCAL_BENCH%" echo set "OLLAMA=%DEST_BIN%\ollama.exe"
 >> "%LOCAL_BENCH%" echo set "CDW_SRC=%DEST_PROJECT%"
+>> "%LOCAL_BENCH%" echo set "LOG_DIR=%USB%\Shared\cdw\run_logs"
+>> "%LOCAL_BENCH%" echo set "LOG_APPEND=%%LOG_DIR%%\benchmark_fast_local.log"
+>> "%LOCAL_BENCH%" echo set "LOG_LATEST=%%LOG_DIR%%\latest_benchmark_fast_local.log"
+>> "%LOCAL_BENCH%" echo set "RAW_LOG=%%LOG_DIR%%\benchmark_raw.jsonl"
 >> "%LOCAL_BENCH%" echo echo ============================================================
 >> "%LOCAL_BENCH%" echo echo   CDW Local Fast Benchmark
 >> "%LOCAL_BENCH%" echo echo   Python : %%PYTHON%%
 >> "%LOCAL_BENCH%" echo echo   Bench  : %%BENCH%%
 >> "%LOCAL_BENCH%" echo echo   Ollama : %%OLLAMA%%
+>> "%LOCAL_BENCH%" echo echo   Log    : %%LOG_APPEND%%
+>> "%LOCAL_BENCH%" echo echo   Latest : %%LOG_LATEST%%
+>> "%LOCAL_BENCH%" echo echo   Raw    : %%RAW_LOG%%
 >> "%LOCAL_BENCH%" echo echo ============================================================
 >> "%LOCAL_BENCH%" echo echo.
+>> "%LOCAL_BENCH%" echo mkdir "%%LOG_DIR%%" 2^>nul
 >> "%LOCAL_BENCH%" echo cd /d "%%CDW_SRC%%"
->> "%LOCAL_BENCH%" echo "%%PYTHON%%" "%%BENCH%%" --base-url http://127.0.0.1:11434 --api ollama --calls warm --max-tokens 400 --ollama-bin "%%OLLAMA%%" llama3.2:3b
+>> "%LOCAL_BENCH%" echo powershell -NoProfile -ExecutionPolicy Bypass -Command "^& { ^& '%%PYTHON%%' '%%BENCH%%' --base-url http://127.0.0.1:11434 --api ollama --calls warm --max-tokens 400 --ollama-bin '%%OLLAMA%%' --raw-log '%%RAW_LOG%%' llama3.2:3b 2^>^&1 ^| Tee-Object -FilePath '%%LOG_APPEND%%' -Append ^| Tee-Object -FilePath '%%LOG_LATEST%%'; exit $LASTEXITCODE }"
 >> "%LOCAL_BENCH%" echo pause
 
 echo.
@@ -163,5 +186,9 @@ echo      %LOCAL_OLLAMA%
 echo   2. Run local benchmark:
 echo      %LOCAL_BENCH%
 echo.
+echo [%DATE% %TIME%] Sync complete. >> "%SYNC_LOG%"
+echo [%DATE% %TIME%] Sync complete. >> "%SYNC_LATEST%"
+echo Local benchmark launcher: %LOCAL_BENCH% >> "%SYNC_LOG%"
+echo Local Ollama launcher: %LOCAL_OLLAMA% >> "%SYNC_LOG%"
 pause
 exit /b 0
