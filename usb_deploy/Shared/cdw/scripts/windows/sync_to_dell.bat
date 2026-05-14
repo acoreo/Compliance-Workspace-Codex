@@ -15,6 +15,9 @@ set "SRC_CDW=%USB%\Shared\cdw"
 set "DEST_ROOT=C:\CDW"
 set "DEST_CDW=%DEST_ROOT%\Shared\cdw"
 set "DEST_PROJECT=%DEST_CDW%\projects\cdw"
+set "DEST_DATA=%DEST_PROJECT%\data"
+set "USER_RAW=%USERPROFILE%\data\benchmark_raw.jsonl"
+set "DEST_RAW=%DEST_DATA%\benchmark_raw.jsonl"
 set "LOCAL_BENCH=%DEST_ROOT%\benchmark_fast_local.bat"
 
 echo ============================================================
@@ -34,6 +37,7 @@ if not exist "%SRC_CDW%\projects\cdw\compliance_workspace\tools\benchmark_llm.py
 
 mkdir "%DEST_ROOT%" 2>nul
 mkdir "%DEST_CDW%" 2>nul
+mkdir "%DEST_DATA%" 2>nul
 
 echo Copying CDW runtime and source to local disk...
 echo Preserving local data, reports, logs, and benchmark outputs.
@@ -53,6 +57,29 @@ if %RC% GEQ 8 (
     echo ERROR: robocopy failed with exit code %RC%.
     pause
     exit /b %RC%
+)
+
+echo.
+if exist "%USER_RAW%" (
+    if not exist "%DEST_RAW%" (
+        echo Importing existing benchmark raw log:
+        echo   from: %USER_RAW%
+        echo   to  : %DEST_RAW%
+        copy "%USER_RAW%" "%DEST_RAW%" >nul
+        if errorlevel 1 (
+            echo WARN: Failed to import existing benchmark raw log.
+        ) else (
+            echo OK: Imported benchmark_raw.jsonl.
+        )
+    ) else (
+        echo Local benchmark raw log already exists:
+        echo   %DEST_RAW%
+        echo Existing user-profile raw log was left untouched:
+        echo   %USER_RAW%
+    )
+) else (
+    echo No existing user-profile benchmark raw log found at:
+    echo   %USER_RAW%
 )
 
 echo.
