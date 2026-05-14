@@ -43,6 +43,24 @@ SYSTEM_PROMPT = (
     "markdown fences, commentary, labels, or extra text."
 )
 
+RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "verdict": {
+            "type": "string",
+            "enum": ["satisfied", "partial", "gap", "not_applicable"],
+        },
+        "confidence": {"type": "number"},
+        "rationale": {"type": "string"},
+        "cited_text": {"type": ["string", "null"]},
+        "gaps_identified": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": ["verdict", "confidence", "rationale", "cited_text", "gaps_identified"],
+}
+
 USER_PROMPT = """\
 Requirement: MOD-025-2 R1
 The Generator Owner shall provide reactive capability data for each generating
@@ -255,7 +273,7 @@ def validate_response(content: str) -> tuple[bool, str, str]:
     return True, verdict, ""
 
 
-def chat_completion_stream(
+def openai_chat_completion_stream(
     base_url: str,
     model: str,
     timeout: int,
@@ -319,6 +337,72 @@ def chat_completion_stream(
     return time.time() - started, first_token, "".join(parts).strip(), ""
 
 
+def ollama_chat_completion_stream(
+    base_url: str,
+    model: str,
+    timeout: int,
+    keep_alive: str,
+    max_tokens: int,
+) -> tuple[float, float | None, str, str]:
+    """Run native Ollama chat with structured output format."""
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": USER_PROMPT},
+        ],
+        "format": RESPONSE_SCHEMA,
+        "options": {
+            "temperature": 0.1,
+            "num_predict": max_tokens,
+        },
+        "stream": True,
+        "keep_alive": keep_alive,
+    }
+
+    req = urllib.request.Request(
+        _api_url(base_url, "/api/chat"),
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+
+    started = time.time()
+    first_token: float | None = None
+    parts: list[str] = []
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("error"):
+                    return time.time() - started, first_token, "", str(event["error"])
+                token = (event.get("message") or {}).get("content") or ""
+                if token and first_token is None:
+                    first_token = time.time() - started
+                if token:
+                    parts.append(token)
+                if event.get("done"):
+                    break
+    except urllib.error.HTTPError as exc:
+        snippet = ""
+        try:
+            snippet = exc.read(300).decode(errors="replace")
+        except Exception:
+            pass
+        return time.time() - started, first_token, "", f"HTTP {exc.code}: {snippet}"
+    except Exception as exc:
+        return time.time() - started, first_token, "", str(exc)
+
+    return time.time() - started, first_token, "".join(parts).strip(), ""
+
+
 def run_call(
     base_url: str,
     model: str,
@@ -326,15 +410,25 @@ def run_call(
     timeout: int,
     keep_alive: str,
     max_tokens: int,
+    api: str,
     ollama_bin: str | None,
 ) -> BenchmarkResult:
-    total, first_token, content, error = chat_completion_stream(
-        base_url=base_url,
-        model=model,
-        timeout=timeout,
-        keep_alive=keep_alive,
-        max_tokens=max_tokens,
-    )
+    if api == "ollama":
+        total, first_token, content, error = ollama_chat_completion_stream(
+            base_url=base_url,
+            model=model,
+            timeout=timeout,
+            keep_alive=keep_alive,
+            max_tokens=max_tokens,
+        )
+    else:
+        total, first_token, content, error = openai_chat_completion_stream(
+            base_url=base_url,
+            model=model,
+            timeout=timeout,
+            keep_alive=keep_alive,
+            max_tokens=max_tokens,
+        )
     processor = read_processor(base_url, model, ollama_bin)
     valid, verdict, validation_issue = validate_response(content)
     snippet_source = content if content else error
@@ -396,6 +490,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark local Ollama models for CDW.")
     parser.add_argument("models", nargs="*", default=["nemomix-local"])
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--api", choices=("openai", "ollama"), default="openai")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--keep-alive", default=DEFAULT_KEEP_ALIVE)
     parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
@@ -456,6 +551,7 @@ def main(argv: list[str]) -> int:
                     args.timeout,
                     args.keep_alive,
                     args.max_tokens,
+                    args.api,
                     ollama_bin,
                 )
             )
@@ -469,6 +565,7 @@ def main(argv: list[str]) -> int:
                     args.timeout,
                     args.keep_alive,
                     args.max_tokens,
+                    args.api,
                     ollama_bin,
                 )
             )

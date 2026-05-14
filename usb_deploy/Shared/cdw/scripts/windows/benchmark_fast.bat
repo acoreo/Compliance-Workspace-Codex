@@ -19,5 +19,5 @@ echo   Calls: warm only
 echo ============================================================
 echo.
 
-call "%SCRIPT_DIR%benchmark_llm.bat" --calls warm --max-tokens 400 "%MODEL%"
+call "%SCRIPT_DIR%benchmark_llm.bat" --api ollama --calls warm --max-tokens 400 "%MODEL%"
 exit /b %ERRORLEVEL%
