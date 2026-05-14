@@ -238,6 +238,8 @@ required = [
     "probe_llm_behavior.bat",
     "pull_fast_model.bat",
     "sync_to_dell.bat",
+    "list_scans.bat",
+    "run_reason.bat",
 ]
 
 errors: list[str] = []
