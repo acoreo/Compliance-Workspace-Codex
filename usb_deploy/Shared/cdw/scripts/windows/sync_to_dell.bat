@@ -134,7 +134,7 @@ echo Writing local fast benchmark launcher:
 echo   %LOCAL_BENCH%
 
 > "%LOCAL_BENCH%" echo @echo off
->> "%LOCAL_BENCH%" echo setlocal
+>> "%LOCAL_BENCH%" echo setlocal enabledelayedexpansion
 >> "%LOCAL_BENCH%" echo set "PYTHON=%DEST_CDW%\python\python.exe"
 >> "%LOCAL_BENCH%" echo set "BENCH=%DEST_PROJECT%\compliance_workspace\tools\benchmark_llm.py"
 >> "%LOCAL_BENCH%" echo set "OLLAMA=%DEST_BIN%\ollama.exe"
@@ -143,6 +143,7 @@ echo   %LOCAL_BENCH%
 >> "%LOCAL_BENCH%" echo set "LOG_APPEND=%%LOG_DIR%%\benchmark_fast_local.log"
 >> "%LOCAL_BENCH%" echo set "LOG_LATEST=%%LOG_DIR%%\latest_benchmark_fast_local.log"
 >> "%LOCAL_BENCH%" echo set "RAW_LOG=%%LOG_DIR%%\benchmark_raw.jsonl"
+>> "%LOCAL_BENCH%" echo set "TMP=%%TEMP%%\cdw_benchmark_fast_%%RANDOM%%.log"
 >> "%LOCAL_BENCH%" echo echo ============================================================
 >> "%LOCAL_BENCH%" echo echo   CDW Local Fast Benchmark
 >> "%LOCAL_BENCH%" echo echo   Python : %%PYTHON%%
@@ -155,8 +156,14 @@ echo   %LOCAL_BENCH%
 >> "%LOCAL_BENCH%" echo echo.
 >> "%LOCAL_BENCH%" echo mkdir "%%LOG_DIR%%" 2^>nul
 >> "%LOCAL_BENCH%" echo cd /d "%%CDW_SRC%%"
->> "%LOCAL_BENCH%" echo powershell -NoProfile -ExecutionPolicy Bypass -Command "^& { ^& '%%PYTHON%%' '%%BENCH%%' --base-url http://127.0.0.1:11434 --api ollama --calls warm --max-tokens 400 --ollama-bin '%%OLLAMA%%' --raw-log '%%RAW_LOG%%' llama3.2:3b 2^>^&1 ^| Tee-Object -FilePath '%%LOG_APPEND%%' -Append ^| Tee-Object -FilePath '%%LOG_LATEST%%'; exit $LASTEXITCODE }"
+>> "%LOCAL_BENCH%" echo "%%PYTHON%%" "%%BENCH%%" --base-url http://127.0.0.1:11434 --api ollama --calls warm --max-tokens 400 --ollama-bin "%%OLLAMA%%" --raw-log "%%RAW_LOG%%" llama3.2:3b ^> "%%TMP%%" 2^>^&1
+>> "%LOCAL_BENCH%" echo set "RC=!ERRORLEVEL!"
+>> "%LOCAL_BENCH%" echo type "%%TMP%%"
+>> "%LOCAL_BENCH%" echo type "%%TMP%%" ^>^> "%%LOG_APPEND%%"
+>> "%LOCAL_BENCH%" echo copy /Y "%%TMP%%" "%%LOG_LATEST%%" ^>nul
+>> "%LOCAL_BENCH%" echo del "%%TMP%%" 2^>nul
 >> "%LOCAL_BENCH%" echo pause
+>> "%LOCAL_BENCH%" echo exit /b !RC!
 
 echo.
 echo Writing local Ollama launcher:
