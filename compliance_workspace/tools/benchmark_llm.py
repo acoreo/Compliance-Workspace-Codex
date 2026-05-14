@@ -33,6 +33,7 @@ from typing import Any
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_TIMEOUT_SECONDS = 900
 DEFAULT_KEEP_ALIVE = "10m"
+DEFAULT_MAX_TOKENS = 400
 
 VALID_VERDICTS = {"satisfied", "partial", "gap", "not_applicable"}
 
@@ -79,6 +80,7 @@ class BenchmarkResult:
     processor: str
     valid_json: bool
     verdict: str
+    validation_issue: str
     response_snippet: str
     error: str
     raw_response: str
@@ -239,13 +241,18 @@ def extract_json(content: str) -> dict[str, Any] | None:
     return None
 
 
-def validate_response(content: str) -> tuple[bool, str]:
+def validate_response(content: str) -> tuple[bool, str, str]:
     obj = extract_json(content)
     if obj is None:
-        return False, ""
+        return False, "", "no_json_object"
     verdict = str(obj.get("verdict", "")).lower().strip()
     required = {"verdict", "confidence", "rationale", "cited_text", "gaps_identified"}
-    return verdict in VALID_VERDICTS and required.issubset(obj.keys()), verdict
+    missing = sorted(required - set(obj.keys()))
+    if missing:
+        return False, verdict, f"missing_keys:{','.join(missing)}"
+    if verdict not in VALID_VERDICTS:
+        return False, verdict, f"invalid_verdict:{verdict or '<empty>'}"
+    return True, verdict, ""
 
 
 def chat_completion_stream(
@@ -253,6 +260,7 @@ def chat_completion_stream(
     model: str,
     timeout: int,
     keep_alive: str,
+    max_tokens: int,
 ) -> tuple[float, float | None, str, str]:
     """Run a streaming chat completion and return timing plus content/error."""
     payload = {
@@ -261,7 +269,7 @@ def chat_completion_stream(
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": USER_PROMPT},
         ],
-        "max_tokens": 200,
+        "max_tokens": max_tokens,
         "temperature": 0.1,
         "stream": True,
         "keep_alive": keep_alive,
@@ -317,6 +325,7 @@ def run_call(
     call: str,
     timeout: int,
     keep_alive: str,
+    max_tokens: int,
     ollama_bin: str | None,
 ) -> BenchmarkResult:
     total, first_token, content, error = chat_completion_stream(
@@ -324,9 +333,10 @@ def run_call(
         model=model,
         timeout=timeout,
         keep_alive=keep_alive,
+        max_tokens=max_tokens,
     )
     processor = read_processor(base_url, model, ollama_bin)
-    valid, verdict = validate_response(content)
+    valid, verdict, validation_issue = validate_response(content)
     snippet_source = content if content else error
     snippet = " ".join(snippet_source.split())[:80]
     return BenchmarkResult(
@@ -337,6 +347,7 @@ def run_call(
         processor=processor,
         valid_json=valid,
         verdict=verdict,
+        validation_issue=validation_issue,
         response_snippet=snippet,
         error=error,
         raw_response=content,
@@ -348,7 +359,7 @@ def print_table(results: list[BenchmarkResult]) -> None:
     print("|---|---:|---:|---:|---|---:|---|---|")
     for r in results:
         first = "" if r.first_token_seconds is None else f"{r.first_token_seconds:.1f}"
-        notes = r.error or r.response_snippet
+        notes = r.error or r.validation_issue or r.response_snippet
         notes = notes.replace("|", "/")
         print(
             f"| {r.model} | {r.call} | {first} | {r.total_seconds:.1f} | "
@@ -371,6 +382,7 @@ def write_raw_results(path: Path, results: list[BenchmarkResult]) -> None:
                         "processor": r.processor,
                         "valid_json": r.valid_json,
                         "verdict": r.verdict,
+                        "validation_issue": r.validation_issue,
                         "error": r.error,
                         "raw_response": r.raw_response,
                     },
@@ -386,6 +398,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--keep-alive", default=DEFAULT_KEEP_ALIVE)
+    parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
     parser.add_argument(
         "--raw-log",
         default=None,
@@ -436,12 +449,28 @@ def main(argv: list[str]) -> int:
             unload_model(args.base_url, model)
             print("Cold call...")
             results.append(
-                run_call(args.base_url, model, "cold", args.timeout, args.keep_alive, ollama_bin)
+                run_call(
+                    args.base_url,
+                    model,
+                    "cold",
+                    args.timeout,
+                    args.keep_alive,
+                    args.max_tokens,
+                    ollama_bin,
+                )
             )
         if args.calls in ("both", "warm"):
             print("Warm call...")
             results.append(
-                run_call(args.base_url, model, "warm", args.timeout, args.keep_alive, ollama_bin)
+                run_call(
+                    args.base_url,
+                    model,
+                    "warm",
+                    args.timeout,
+                    args.keep_alive,
+                    args.max_tokens,
+                    ollama_bin,
+                )
             )
 
     print("\nPaste this table into 05112026-discussion.md:")

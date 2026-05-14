@@ -15,8 +15,9 @@ if "%~1"=="" (
 echo ============================================================
 echo   CDW Fast-Model Benchmark
 echo   Model: %MODEL%
+echo   Calls: warm only
 echo ============================================================
 echo.
 
-call "%SCRIPT_DIR%benchmark_llm.bat" --calls both "%MODEL%"
+call "%SCRIPT_DIR%benchmark_llm.bat" --calls warm --max-tokens 400 "%MODEL%"
 exit /b %ERRORLEVEL%
