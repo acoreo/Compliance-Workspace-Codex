@@ -58,6 +58,7 @@ as long as the `Shared\cdw\scripts\windows\` structure is preserved.
             │   │   ├── benchmark_llm.bat           ← Runs the Ollama benchmark
             │   │   ├── benchmark_fast.bat          ← Benchmarks the smaller model lane
             │   │   ├── pull_fast_model.bat         ← Pulls llama3.2:3b into USB store
+            │   │   ├── sync_to_dell.bat            ← Copies CDW to C:\CDW
             │   │   └── verify_env.bat              ← Checks Python + deps are OK
             │   └── mac\
             │       ├── pull_fast_model_mac.sh
