@@ -87,7 +87,7 @@ _VALID_VERDICTS = {"satisfied", "partial", "gap", "not_applicable", "parse_error
 
 
 def _normalise_parsed(d: dict) -> dict:
-    """Enforce schema on a parsed dict — clamp types, fill missing fields."""
+    """Enforce schema on a parsed dict - clamp types, fill missing fields."""
     verdict = str(d.get("verdict", "parse_error")).lower().strip()
     if verdict not in _VALID_VERDICTS:
         verdict = "parse_error"
@@ -302,7 +302,7 @@ def assess_candidates(
         ).fetchone()
         measure_text = measure_row[0] if measure_row else ""
 
-        # Keep excerpt short — large prompts spike memory on CPU-only inference
+        # Keep excerpt short - large prompts spike memory on CPU-only inference
         evidence_excerpt = (ev_text or "")[:1500]
         user_prompt = build_user_prompt(
             citation_path=citation_path or "",
@@ -329,7 +329,7 @@ def assess_candidates(
                 f"  [{bar}] {current}/{total_to_assess} "
                 f"({percent * 100:5.1f}%) | elapsed {timedelta(seconds=int(elapsed))}{eta}"
             )
-            print(f"    Assessing: {citation_path or chunk_id} ← …{short_path}")
+            print(f"    Assessing: {citation_path or chunk_id} <- ...{short_path}")
 
         # First-pass runs should keep moving. Backend failures are stored as
         # parse_error assessments so the report shows exactly which pairs failed.
@@ -340,7 +340,7 @@ def assess_candidates(
             raw_response = f"ERROR: {exc}"
         call_seconds = time.time() - call_started
 
-        # Brief pause between calls — lets CPU-only Ollama free memory before next inference
+        # Brief pause between calls - lets CPU-only Ollama free memory before next inference
         delay = getattr(backend, "inter_call_delay", 3)
         if delay > 0:
             time.sleep(delay)

@@ -1,6 +1,6 @@
 """Phase 3 pipeline orchestrator (P3-T07).
 
-Runs extraction → matching → LLM assessment → gap report in order,
+Runs extraction -> matching -> LLM assessment -> gap report in order,
 printing progress when verbose=True.  Each step is idempotent / resumable:
 already-cached extractions and already-assessed pairs are skipped.
 """
@@ -60,29 +60,29 @@ def run_phase3(
     create_reasoning_tables(conn)
 
     # ------------------------------------------------------------------
-    # Step 1 — Extract text from all document file_nodes
+    # Step 1 - Extract text from all document file_nodes
     # ------------------------------------------------------------------
     if verbose:
-        print("\n[1/4] Extracting evidence text…")
+        print("\n[1/4] Extracting evidence text...")
     results = extract_all(conn, scan_id)
     if verbose:
         cached = sum(1 for r in results if r.extraction_method != "fallback" or r.error is None)
         print(f"  {len(results)} file(s) processed ({cached} usable).")
 
     # ------------------------------------------------------------------
-    # Step 2 — Match evidence to requirement chunks
+    # Step 2 - Match evidence to requirement chunks
     # ------------------------------------------------------------------
     if verbose:
-        print(f"\n[2/4] Matching evidence to {standard_id} requirements (top-{top_k})…")
+        print(f"\n[2/4] Matching evidence to {standard_id} requirements (top-{top_k})...")
     candidates = compute_candidates(conn, run_id, standard_id, scan_id=scan_id, top_k=top_k)
     if verbose:
         print(f"  {len(candidates)} candidate pair(s) generated.")
 
     # ------------------------------------------------------------------
-    # Step 3 — LLM assessment
+    # Step 3 - LLM assessment
     # ------------------------------------------------------------------
     if verbose:
-        print("\n[3/4] Running LLM assessment…")
+        print("\n[3/4] Running LLM assessment...")
 
     if backend is None:
         if config_path is None:
@@ -97,18 +97,18 @@ def run_phase3(
     try:
         assess_candidates(conn, backend, run_id, standard_id, verbose=verbose)
     except RuntimeError as exc:
-        # Backend went down mid-run — surface a clear message and abort.
+        # Backend went down mid-run - surface a clear message and abort.
         # Do NOT generate a partial gap report; the caller sees the exception.
         if verbose:
             print(f"\n  [FATAL] LLM backend error: {exc}")
-            print("  Assessment aborted — start Ollama and re-run with the same run_id to resume.")
+            print("  Assessment aborted - start Ollama and re-run with the same run_id to resume.")
         raise
 
     # ------------------------------------------------------------------
-    # Step 4 — Generate gap report
+    # Step 4 - Generate gap report
     # ------------------------------------------------------------------
     if verbose:
-        print("\n[4/4] Generating gap report…")
+        print("\n[4/4] Generating gap report...")
 
     report = build_report(conn, run_id, standard_id)
     html = build_html_report(report)
