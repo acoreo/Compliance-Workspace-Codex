@@ -88,5 +88,30 @@ class TestAssertHealthy(unittest.TestCase):
                 backend.assert_healthy()  # must not raise
 
 
+class TestComplete(unittest.TestCase):
+    def test_ollama_uses_native_streaming_structured_api(self):
+        """Ollama configs use /api/chat with schema-constrained streaming output."""
+        payload_lines = [
+            json.dumps({"message": {"content": '{"verdict":"satisfied",'}}).encode() + b"\n",
+            json.dumps({"message": {"content": '"confidence":1.0}'}, "done": True}).encode() + b"\n",
+        ]
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.__iter__.return_value = iter(payload_lines)
+
+        backend = _make_backend(model="llama3.2:3b")
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mocked:
+            text = backend.complete("system", "user")
+
+        self.assertEqual(text, '{"verdict":"satisfied","confidence":1.0}')
+        request = mocked.call_args.args[0]
+        self.assertEqual(request.full_url, "http://localhost:11434/api/chat")
+        body = json.loads(request.data.decode())
+        self.assertTrue(body["stream"])
+        self.assertIn("format", body)
+        self.assertEqual(body["options"]["num_predict"], backend.max_tokens)
+
+
 if __name__ == "__main__":
     unittest.main()

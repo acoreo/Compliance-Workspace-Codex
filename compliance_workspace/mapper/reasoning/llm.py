@@ -22,6 +22,30 @@ _DEFAULTS: dict[str, Any] = {
     "temperature": 0.1,
 }
 
+_OLLAMA_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "verdict": {
+            "type": "string",
+            "enum": ["satisfied", "partial", "gap", "not_applicable"],
+        },
+        "confidence": {"type": "number"},
+        "rationale": {"type": "string"},
+        "cited_text": {"type": ["string", "null"]},
+        "gaps_identified": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": [
+        "verdict",
+        "confidence",
+        "rationale",
+        "cited_text",
+        "gaps_identified",
+    ],
+}
+
 
 def _load_toml_section(config_path: Path, section: str) -> dict[str, Any]:
     """Return a TOML section dict; empty dict on any failure."""
@@ -145,6 +169,9 @@ class LlamaCppBackend:
         Retries up to *max_retries* times with exponential backoff (1 s, 2 s, …)
         on connection / OS errors.  Raises RuntimeError if all attempts fail.
         """
+        if "localhost:11434" in self.base_url or "127.0.0.1:11434" in self.base_url:
+            return self._complete_ollama_chat(system_prompt, user_prompt, max_tokens)
+
         payload = json.dumps(
             {
                 "model": self.model,
@@ -199,4 +226,80 @@ class LlamaCppBackend:
 
         raise RuntimeError(
             f"Ollama unreachable after {self.max_retries} attempt(s) [{url}]: {last_exc}"
+        )
+
+    def _complete_ollama_chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Use Ollama's native streaming API with structured output.
+
+        The Dell benchmark path proved this route works better than the
+        OpenAI-compatible non-streaming endpoint for CPU-only local inference.
+        """
+        url = f"{self._ollama_root()}/api/chat"
+        payload = json.dumps(
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "format": _OLLAMA_RESPONSE_SCHEMA,
+                "options": {
+                    "temperature": self.temperature,
+                    "num_predict": max_tokens if max_tokens is not None else self.max_tokens,
+                },
+                "stream": True,
+                "keep_alive": "10m",
+            }
+        ).encode()
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                parts: list[str] = []
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    for raw_line in resp:
+                        line = raw_line.decode("utf-8", errors="replace").strip()
+                        if not line:
+                            continue
+                        data = json.loads(line)
+                        if "error" in data:
+                            raise RuntimeError(str(data["error"]))
+                        msg = data.get("message") or {}
+                        content = msg.get("content")
+                        if content:
+                            parts.append(content)
+                        if data.get("done"):
+                            break
+                return "".join(parts).strip()
+            except urllib.error.HTTPError as exc:
+                body_snippet = ""
+                try:
+                    body_snippet = exc.read(200).decode(errors="replace")
+                except Exception:
+                    pass
+                last_exc = RuntimeError(
+                    f"HTTP {exc.code} from {url}: {body_snippet}"
+                )
+            except (urllib.error.URLError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+                last_exc = exc
+            except RuntimeError as exc:
+                last_exc = exc
+
+            if attempt < self.max_retries - 1:
+                time.sleep(2 ** attempt)
+
+        raise RuntimeError(
+            f"Ollama chat failed after {self.max_retries} attempt(s) [{url}]: {last_exc}"
         )
