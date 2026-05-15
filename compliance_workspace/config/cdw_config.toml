@@ -2,11 +2,11 @@
 backend = "ollama"
 base_url = "http://localhost:11434/v1"
 model = "llama3.2:3b"
-timeout_seconds = 300
-max_retries = 3
-max_tokens = 1024
+timeout_seconds = 240
+max_retries = 1
+max_tokens = 400
 temperature = 0.1
-inter_call_delay_seconds = 3
+inter_call_delay_seconds = 1
 
 [llm.fallback]
 model = "qwen2.5:9b"

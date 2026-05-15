@@ -331,10 +331,13 @@ def assess_candidates(
             )
             print(f"    Assessing: {citation_path or chunk_id} ← …{short_path}")
 
-        # RuntimeError propagates up — backend failures abort the run rather than
-        # being silently stored as parse_error rows (Codex audit recommendation).
+        # First-pass runs should keep moving. Backend failures are stored as
+        # parse_error assessments so the report shows exactly which pairs failed.
         call_started = time.time()
-        raw_response = backend.complete(_SYSTEM_PROMPT, user_prompt)
+        try:
+            raw_response = backend.complete(_SYSTEM_PROMPT, user_prompt)
+        except RuntimeError as exc:
+            raw_response = f"ERROR: {exc}"
         call_seconds = time.time() - call_started
 
         # Brief pause between calls — lets CPU-only Ollama free memory before next inference
