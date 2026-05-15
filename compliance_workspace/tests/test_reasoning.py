@@ -26,6 +26,7 @@ from mapper.reasoning.schema import create_reasoning_tables
 from mapper.reasoning.extractor import AttachmentResult, ExtractResult, extract_file, extract_all
 from mapper.reasoning.matcher import (
     Candidate,
+    _is_usable_evidence_text,
     _structural_score,
     compute_candidates,
 )
@@ -509,6 +510,20 @@ class TestStructuralScore:
         assert 0.0 <= score <= 1.0
 
 
+class TestEvidenceTextQuality:
+    def test_rejects_pdf_cid_glyph_noise(self):
+        garbage = " ".join(f"(cid:{i})" for i in range(100))
+        assert not _is_usable_evidence_text(garbage)
+
+    def test_accepts_normal_email_text(self):
+        text = (
+            "Subject: Acknowledgment of Receipt\n"
+            "From: CenterPoint Energy\n"
+            "Thank you. We will review and follow up as needed."
+        )
+        assert _is_usable_evidence_text(text)
+
+
 class TestCandidateStructure:
     def test_candidate_fields(self):
         c = Candidate(
@@ -633,6 +648,61 @@ class TestCandidateStructure:
         # structural matching produced an all-zero score.
         assert len(candidates) == 3
         assert {c.file_node_id for c in candidates} == set(files)
+
+    def test_garbled_pdf_text_is_not_selected(self, tmp_path):
+        """Regression: CID-garbled Outlook PDFs should not be sent to the LLM."""
+        conn = _make_db()
+        conn.execute(
+            "INSERT INTO scans (scope_key, root_path, mode, scan_ts, file_count, "
+            "folder_count, skipped_count, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("/tmp/cid-garbage", "/tmp/cid-garbage", "broad", "2026-01-01T00:00:00", 2, 0, 0, 10),
+        )
+        scan_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        bad_pdf = tmp_path / "Acknowledgment of Receipt From Centerpoint - Outlook.pdf"
+        bad_pdf.write_bytes(b"%PDF bad extraction fixture")
+        conn.execute(
+            "INSERT INTO file_nodes (scan_id, name, full_path, extension, "
+            "size_bytes, modified_ts, depth, parent_path, is_document) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (scan_id, bad_pdf.name, str(bad_pdf), "pdf", 267001, "2026-01-01", 1, "/tmp", 1),
+        )
+        bad_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        bad_text = " ".join(f"(cid:{i})" for i in range(200))
+        conn.execute(
+            "INSERT INTO evidence_text (file_node_id, text, extraction_method, "
+            "char_count, extracted_ts) VALUES (?, ?, ?, ?, ?)",
+            (bad_id, bad_text, "pdfminer", len(bad_text), "2026-01-01"),
+        )
+
+        good_pdf = tmp_path / "MOD-025_Attachment_2_Filled_2022_v4.pdf"
+        good_pdf.write_text("Reactive capability verification attachment.", encoding="utf-8")
+        conn.execute(
+            "INSERT INTO file_nodes (scan_id, name, full_path, extension, "
+            "size_bytes, modified_ts, depth, parent_path, is_document) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (scan_id, good_pdf.name, str(good_pdf), "pdf", 1000, "2026-01-01", 1, "/tmp", 1),
+        )
+        good_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            "INSERT INTO evidence_text (file_node_id, text, extraction_method, "
+            "char_count, extracted_ts) VALUES (?, ?, ?, ?, ?)",
+            (good_id, "Reactive capability verification attachment.", "pdfminer", 44, "2026-01-01"),
+        )
+
+        _seed_chunk(
+            conn,
+            scan_id,
+            good_id,
+            chunk_id="mod-025-r1",
+            standard_id="MOD-025-2",
+            expected_evidence=["signed_acknowledgement"],
+        )
+        conn.commit()
+
+        candidates = compute_candidates(conn, "run-cid", "MOD-025-2", scan_id=scan_id, top_k=2)
+        assert candidates
+        assert bad_id not in {c.file_node_id for c in candidates}
 
 
 # ===========================================================================

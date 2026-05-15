@@ -133,6 +133,19 @@ def _semantic_score_for_pair(
     return best
 
 
+def _is_usable_evidence_text(text: str) -> bool:
+    """Return False for extraction output that is mostly PDF CID glyph noise."""
+    if not text:
+        return True
+
+    cid_count = len(re.findall(r"\(cid:\d+\)", text))
+    if cid_count < 20:
+        return True
+
+    cid_chars = sum(len(m.group(0)) for m in re.finditer(r"\(cid:\d+\)", text))
+    return (cid_chars / max(len(text), 1)) < 0.05
+
+
 def _load_embedder():
     """Return a sentence-transformers model, or None if not installed."""
     try:
@@ -212,6 +225,9 @@ def compute_candidates(
         """,
         (scan_id,),
     ).fetchall()
+    evidence_rows = [
+        row for row in evidence_rows if _is_usable_evidence_text(row[3] or "")
+    ]
 
     if not req_chunks or not evidence_rows:
         return []
