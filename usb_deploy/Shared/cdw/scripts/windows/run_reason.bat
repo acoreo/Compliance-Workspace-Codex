@@ -42,7 +42,10 @@ if not exist "%CDW_MAIN%" (
     exit /b 1
 )
 
+set "TOP_K=%~3"
+if "%TOP_K%"=="" set "TOP_K=2"
+
 set "PYTHONPATH=%CDW_SRC%"
 cd /d "%CDW_SRC%"
-"%PYTHON%" "%CDW_MAIN%" --reason --scan-id %~1 --standard %~2
+"%PYTHON%" "%CDW_MAIN%" --reason --scan-id %~1 --standard %~2 --top-k %TOP_K%
 pause

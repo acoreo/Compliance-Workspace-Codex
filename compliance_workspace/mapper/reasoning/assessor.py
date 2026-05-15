@@ -10,7 +10,7 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from .llm import LlamaCppBackend
@@ -262,18 +262,33 @@ def assess_candidates(
         (run_id,),
     ).fetchall()
 
+    total_candidates = len(candidates)
+    already_assessed = {
+        (chunk_id, file_node_id)
+        for chunk_id, file_node_id in conn.execute(
+            """SELECT chunk_id, file_node_id
+               FROM evidence_assessments
+               WHERE run_id = ?""",
+            (run_id,),
+        ).fetchall()
+    }
+    total_to_assess = sum(
+        1
+        for row in candidates
+        if (row[0], row[1]) not in already_assessed
+    )
+
     assessments: list[Assessment] = []
     processed = 0
+    skipped = 0
+    started = time.time()
 
     for (chunk_id, file_node_id, file_path, ev_text,
          citation_path, req_text, requirement_id, std_id) in candidates:
 
         # Resumability: skip if already assessed this pair
-        if conn.execute(
-            """SELECT 1 FROM evidence_assessments
-               WHERE run_id = ? AND chunk_id = ? AND file_node_id = ?""",
-            (run_id, chunk_id, file_node_id),
-        ).fetchone():
+        if (chunk_id, file_node_id) in already_assessed:
+            skipped += 1
             continue
 
         # Fetch best measure text for this requirement
@@ -299,11 +314,28 @@ def assess_candidates(
 
         if verbose:
             short_path = file_path[-60:] if len(file_path) > 60 else file_path
-            print(f"  Assessing: {citation_path or chunk_id} ← …{short_path}")
+            current = processed + 1
+            percent = (current - 1) / total_to_assess if total_to_assess else 1.0
+            bar_width = 24
+            filled = int(percent * bar_width)
+            bar = "#" * filled + "-" * (bar_width - filled)
+            elapsed = time.time() - started
+            eta = ""
+            if processed > 0:
+                avg = elapsed / processed
+                remaining = max(total_to_assess - processed, 0) * avg
+                eta = f" | ETA {timedelta(seconds=int(remaining))}"
+            print(
+                f"  [{bar}] {current}/{total_to_assess} "
+                f"({percent * 100:5.1f}%) | elapsed {timedelta(seconds=int(elapsed))}{eta}"
+            )
+            print(f"    Assessing: {citation_path or chunk_id} ← …{short_path}")
 
         # RuntimeError propagates up — backend failures abort the run rather than
         # being silently stored as parse_error rows (Codex audit recommendation).
+        call_started = time.time()
         raw_response = backend.complete(_SYSTEM_PROMPT, user_prompt)
+        call_seconds = time.time() - call_started
 
         # Brief pause between calls — lets CPU-only Ollama free memory before next inference
         delay = getattr(backend, "inter_call_delay", 3)
@@ -329,9 +361,24 @@ def assess_candidates(
         assessments.append(a)
         _write_assessment(conn, a)
         processed += 1
+        if verbose:
+            done_percent = processed / total_to_assess if total_to_assess else 1.0
+            filled = int(done_percent * 24)
+            bar = "#" * filled + "-" * (24 - filled)
+            elapsed = time.time() - started
+            avg = elapsed / processed if processed else 0
+            remaining = max(total_to_assess - processed, 0) * avg
+            print(
+                f"    Done in {call_seconds:.1f}s | verdict={a.verdict} | "
+                f"progress [{bar}] {processed}/{total_to_assess} "
+                f"({done_percent * 100:5.1f}%) | ETA {timedelta(seconds=int(remaining))}"
+            )
 
     if verbose:
-        print(f"  Assessed {processed} new pair(s) (skipped existing).")
+        print(
+            f"  Assessed {processed} new pair(s); skipped {skipped} existing "
+            f"out of {total_candidates} candidate pair(s)."
+        )
 
     return assessments
 

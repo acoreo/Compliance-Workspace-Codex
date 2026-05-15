@@ -270,6 +270,7 @@ def _run_reasoning(db_str: str, args) -> None:
             conn,
             scan_id=args.scan_id,
             standard_id=args.standard,
+            top_k=args.top_k,
             run_id=args.run_id or None,
             backend=backend,
             verbose=True,
@@ -338,6 +339,16 @@ def main() -> None:
         help=(
             "Resume a previous --reason run using its run_id (UUID printed at run start). "
             "Already-assessed candidate pairs are skipped; matching is re-run but idempotent."
+        ),
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=2,
+        metavar="N",
+        help=(
+            "Evidence candidates per requirement for --reason. "
+            "Default 2 keeps CPU-only local runs practical; use 5 for deeper review."
         ),
     )
     parser.add_argument(
