@@ -283,10 +283,10 @@ echo   %LOCAL_REASON%
 >> "%LOCAL_REASON%" echo set "PYTHON=%DEST_CDW%\python\python.exe"
 >> "%LOCAL_REASON%" echo set "CDW_SRC=%DEST_PROJECT%"
 >> "%LOCAL_REASON%" echo set "CDW_MAIN=%DEST_PROJECT%\compliance_workspace\main.py"
+>> "%LOCAL_REASON%" echo set "LIVE_LOG=%DEST_PROJECT%\compliance_workspace\tools\run_with_live_log.py"
 >> "%LOCAL_REASON%" echo set "LOG_DIR=%USB%\Shared\cdw\run_logs"
 >> "%LOCAL_REASON%" echo set "LOG_APPEND=%%LOG_DIR%%\run_reason_local.log"
 >> "%LOCAL_REASON%" echo set "LOG_LATEST=%%LOG_DIR%%\latest_run_reason_local.log"
->> "%LOCAL_REASON%" echo set "TMP=%%TEMP%%\cdw_run_reason_%%RANDOM%%.log"
 >> "%LOCAL_REASON%" echo if "%%~1"=="" ^(
 >> "%LOCAL_REASON%" echo     echo Usage:
 >> "%LOCAL_REASON%" echo     echo   %%~nx0 SCAN_ID STANDARD_ID [TOP_K]
@@ -311,10 +311,15 @@ echo   %LOCAL_REASON%
 >> "%LOCAL_REASON%" echo     pause
 >> "%LOCAL_REASON%" echo     exit /b 1
 >> "%LOCAL_REASON%" echo ^)
+>> "%LOCAL_REASON%" echo if not exist "%%LIVE_LOG%%" ^(
+>> "%LOCAL_REASON%" echo     echo ERROR: live log wrapper not found at:
+>> "%LOCAL_REASON%" echo     echo        %%LIVE_LOG%%
+>> "%LOCAL_REASON%" echo     pause
+>> "%LOCAL_REASON%" echo     exit /b 1
+>> "%LOCAL_REASON%" echo ^)
 >> "%LOCAL_REASON%" echo set "TOP_K=%%~3"
 >> "%LOCAL_REASON%" echo if "%%TOP_K%%"=="" set "TOP_K=2"
 >> "%LOCAL_REASON%" echo mkdir "%%LOG_DIR%%" 2^>nul
->> "%LOCAL_REASON%" echo copy /Y NUL "%%LOG_LATEST%%" ^>nul
 >> "%LOCAL_REASON%" echo echo ============================================================
 >> "%LOCAL_REASON%" echo echo   CDW Local Reason Run
 >> "%LOCAL_REASON%" echo echo   Python : %%PYTHON%%
@@ -327,12 +332,8 @@ echo   %LOCAL_REASON%
 >> "%LOCAL_REASON%" echo echo ============================================================
 >> "%LOCAL_REASON%" echo echo.
 >> "%LOCAL_REASON%" echo cd /d "%%CDW_SRC%%"
->> "%LOCAL_REASON%" echo "%%PYTHON%%" "%%CDW_MAIN%%" --reason --scan-id %%~1 --standard %%~2 --top-k %%TOP_K%% ^> "%%TMP%%" 2^>^&1
+>> "%LOCAL_REASON%" echo "%%PYTHON%%" "%%LIVE_LOG%%" --append-log "%%LOG_APPEND%%" --latest-log "%%LOG_LATEST%%" -- "%%PYTHON%%" -u "%%CDW_MAIN%%" --reason --scan-id %%~1 --standard %%~2 --top-k %%TOP_K%%
 >> "%LOCAL_REASON%" echo set "RC=!ERRORLEVEL!"
->> "%LOCAL_REASON%" echo type "%%TMP%%"
->> "%LOCAL_REASON%" echo type "%%TMP%%" ^>^> "%%LOG_APPEND%%"
->> "%LOCAL_REASON%" echo copy /Y "%%TMP%%" "%%LOG_LATEST%%" ^>nul
->> "%LOCAL_REASON%" echo del "%%TMP%%" 2^>nul
 >> "%LOCAL_REASON%" echo pause
 >> "%LOCAL_REASON%" echo exit /b !RC!
 

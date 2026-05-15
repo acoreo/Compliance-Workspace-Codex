@@ -268,6 +268,7 @@ if sync.exists():
         'set "LOCAL_BENCH=%DEST_ROOT%\\benchmark_fast_local.bat"',
         'set "LOCAL_ALL=%DEST_ROOT%\\run_all_local_tests.bat"',
         'set "LOCAL_REASON=%DEST_CDW%\\scripts\\windows\\run_reason.bat"',
+        "run_with_live_log.py",
         "benchmark_fast_local.log",
         "latest_benchmark_fast_local.log",
         "run_all_local_tests.log",
