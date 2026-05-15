@@ -27,6 +27,7 @@ set "DEST_RAW=%DEST_DATA%\benchmark_raw.jsonl"
 set "LOCAL_BENCH=%DEST_ROOT%\benchmark_fast_local.bat"
 set "LOCAL_OLLAMA=%DEST_ROOT%\start_ollama_local.bat"
 set "LOCAL_ALL=%DEST_ROOT%\run_all_local_tests.bat"
+set "LOCAL_REASON=%DEST_CDW%\scripts\windows\run_reason.bat"
 set "LOG_DIR=%USB%\Shared\cdw\run_logs"
 set "SYNC_LOG=%LOG_DIR%\sync_to_dell.log"
 set "SYNC_LATEST=%LOG_DIR%\latest_sync_to_dell.log"
@@ -274,6 +275,68 @@ echo   %LOCAL_ALL%
 >> "%LOCAL_ALL%" echo exit /b 0
 
 echo.
+echo Writing logged local reason launcher:
+echo   %LOCAL_REASON%
+
+> "%LOCAL_REASON%" echo @echo off
+>> "%LOCAL_REASON%" echo setlocal enabledelayedexpansion
+>> "%LOCAL_REASON%" echo set "PYTHON=%DEST_CDW%\python\python.exe"
+>> "%LOCAL_REASON%" echo set "CDW_SRC=%DEST_PROJECT%"
+>> "%LOCAL_REASON%" echo set "CDW_MAIN=%DEST_PROJECT%\compliance_workspace\main.py"
+>> "%LOCAL_REASON%" echo set "LOG_DIR=%USB%\Shared\cdw\run_logs"
+>> "%LOCAL_REASON%" echo set "LOG_APPEND=%%LOG_DIR%%\run_reason_local.log"
+>> "%LOCAL_REASON%" echo set "LOG_LATEST=%%LOG_DIR%%\latest_run_reason_local.log"
+>> "%LOCAL_REASON%" echo set "TMP=%%TEMP%%\cdw_run_reason_%%RANDOM%%.log"
+>> "%LOCAL_REASON%" echo if "%%~1"=="" ^(
+>> "%LOCAL_REASON%" echo     echo Usage:
+>> "%LOCAL_REASON%" echo     echo   %%~nx0 SCAN_ID STANDARD_ID [TOP_K]
+>> "%LOCAL_REASON%" echo     pause
+>> "%LOCAL_REASON%" echo     exit /b 2
+>> "%LOCAL_REASON%" echo ^)
+>> "%LOCAL_REASON%" echo if "%%~2"=="" ^(
+>> "%LOCAL_REASON%" echo     echo Usage:
+>> "%LOCAL_REASON%" echo     echo   %%~nx0 SCAN_ID STANDARD_ID [TOP_K]
+>> "%LOCAL_REASON%" echo     pause
+>> "%LOCAL_REASON%" echo     exit /b 2
+>> "%LOCAL_REASON%" echo ^)
+>> "%LOCAL_REASON%" echo if not exist "%%PYTHON%%" ^(
+>> "%LOCAL_REASON%" echo     echo ERROR: Python not found at:
+>> "%LOCAL_REASON%" echo     echo        %%PYTHON%%
+>> "%LOCAL_REASON%" echo     pause
+>> "%LOCAL_REASON%" echo     exit /b 1
+>> "%LOCAL_REASON%" echo ^)
+>> "%LOCAL_REASON%" echo if not exist "%%CDW_MAIN%%" ^(
+>> "%LOCAL_REASON%" echo     echo ERROR: main.py not found at:
+>> "%LOCAL_REASON%" echo     echo        %%CDW_MAIN%%
+>> "%LOCAL_REASON%" echo     pause
+>> "%LOCAL_REASON%" echo     exit /b 1
+>> "%LOCAL_REASON%" echo ^)
+>> "%LOCAL_REASON%" echo set "TOP_K=%%~3"
+>> "%LOCAL_REASON%" echo if "%%TOP_K%%"=="" set "TOP_K=2"
+>> "%LOCAL_REASON%" echo mkdir "%%LOG_DIR%%" 2^>nul
+>> "%LOCAL_REASON%" echo copy /Y NUL "%%LOG_LATEST%%" ^>nul
+>> "%LOCAL_REASON%" echo echo ============================================================
+>> "%LOCAL_REASON%" echo echo   CDW Local Reason Run
+>> "%LOCAL_REASON%" echo echo   Python : %%PYTHON%%
+>> "%LOCAL_REASON%" echo echo   Main   : %%CDW_MAIN%%
+>> "%LOCAL_REASON%" echo echo   Scan   : %%~1
+>> "%LOCAL_REASON%" echo echo   Standard: %%~2
+>> "%LOCAL_REASON%" echo echo   Top-K  : %%TOP_K%%
+>> "%LOCAL_REASON%" echo echo   Log    : %%LOG_APPEND%%
+>> "%LOCAL_REASON%" echo echo   Latest : %%LOG_LATEST%%
+>> "%LOCAL_REASON%" echo echo ============================================================
+>> "%LOCAL_REASON%" echo echo.
+>> "%LOCAL_REASON%" echo cd /d "%%CDW_SRC%%"
+>> "%LOCAL_REASON%" echo "%%PYTHON%%" "%%CDW_MAIN%%" --reason --scan-id %%~1 --standard %%~2 --top-k %%TOP_K%% ^> "%%TMP%%" 2^>^&1
+>> "%LOCAL_REASON%" echo set "RC=!ERRORLEVEL!"
+>> "%LOCAL_REASON%" echo type "%%TMP%%"
+>> "%LOCAL_REASON%" echo type "%%TMP%%" ^>^> "%%LOG_APPEND%%"
+>> "%LOCAL_REASON%" echo copy /Y "%%TMP%%" "%%LOG_LATEST%%" ^>nul
+>> "%LOCAL_REASON%" echo del "%%TMP%%" 2^>nul
+>> "%LOCAL_REASON%" echo pause
+>> "%LOCAL_REASON%" echo exit /b !RC!
+
+echo.
 echo ============================================================
 echo   Sync complete.
 echo ============================================================
@@ -285,11 +348,14 @@ echo   2. Run local benchmark:
 echo      %LOCAL_BENCH%
 echo   3. Or run all local tests:
 echo      %LOCAL_ALL%
+echo   4. Run reason with USB logging:
+echo      %LOCAL_REASON% 1 MOD-025-2
 echo.
 echo [%DATE% %TIME%] Sync complete. >> "%SYNC_LOG%"
 echo [%DATE% %TIME%] Sync complete. >> "%SYNC_LATEST%"
 echo Local benchmark launcher: %LOCAL_BENCH% >> "%SYNC_LOG%"
 echo Local Ollama launcher: %LOCAL_OLLAMA% >> "%SYNC_LOG%"
 echo Local all-tests launcher: %LOCAL_ALL% >> "%SYNC_LOG%"
+echo Local reason launcher: %LOCAL_REASON% >> "%SYNC_LOG%"
 pause
 exit /b 0

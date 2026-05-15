@@ -267,10 +267,13 @@ if sync.exists():
     expected = [
         'set "LOCAL_BENCH=%DEST_ROOT%\\benchmark_fast_local.bat"',
         'set "LOCAL_ALL=%DEST_ROOT%\\run_all_local_tests.bat"',
+        'set "LOCAL_REASON=%DEST_CDW%\\scripts\\windows\\run_reason.bat"',
         "benchmark_fast_local.log",
         "latest_benchmark_fast_local.log",
         "run_all_local_tests.log",
         "behavior_probe_raw.jsonl",
+        "run_reason_local.log",
+        "latest_run_reason_local.log",
     ]
     for needle in expected:
         if needle not in sync_text:
